@@ -2,7 +2,7 @@
   "name": "pi-wasabi",
   "version": "0.0.1",
   "private": true,
-  "description": "A minimal Pi extension package.",
+  "description": "Pi workflow extensions for prompt auditing, session tracking, and session cropping.",
   "type": "module",
   "keywords": [
     "pi-package"
@@ -14,7 +14,8 @@
     "extensions": [
       "./extensions/wasabi.ts",
       "./extensions/litellm-session.ts",
-      "./extensions/crop.ts"
+      "./extensions/crop.ts",
+      "./extensions/prompt-audit.ts"
     ]
   },
   "scripts": {
@@ -26,6 +27,7 @@
     "@earendil-works/pi-coding-agent": "*"
   },
   "devDependencies": {
+    "@earendil-works/pi-coding-agent": "0.84.4",
     "@types/jest": "^30.0.0",
     "jest": "^30.4.2",
     "ts-jest": "^29.4.12",

@@ -1,0 +1,10 @@
+{"id":"clear-01","text":"Run npm test and fix any failures in src/parser.ts.","expected":"pass"}
+{"id":"clear-02","text":"Rename parseConfig to parseProjectConfig in src/config.ts and update all imports.","expected":"pass"}
+{"id":"clear-03","text":"Add a unit test proving that empty input returns an empty array.","expected":"pass"}
+{"id":"clear-04","text":"Summarize the last assistant response in three bullets.","expected":"pass","context":"The preceding assistant response exists."}
+{"id":"clear-05","text":"Change the request timeout from 5 seconds to 10 seconds and run the timeout tests.","expected":"pass"}
+{"id":"clear-06","text":"Review the current diff for correctness; do not modify files.","expected":"pass"}
+{"id":"clear-07","text":"Create docs/setup.md with Linux installation instructions for Node.js 22.","expected":"pass"}
+{"id":"clear-08","text":"In package.json, add a check script that runs typecheck followed by tests.","expected":"pass"}
+{"id":"clear-09","text":"Delete only /tmp/wasabi-test-output after confirming that exact path exists.","expected":"pass"}
+{"id":"clear-10","text":"Use the attached screenshot to match the button label and spacing.","expected":"pass","images":1}

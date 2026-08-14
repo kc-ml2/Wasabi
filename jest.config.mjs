@@ -12,5 +12,5 @@ const preset = createDefaultEsmPreset({
 
 export default {
   ...preset,
-  testMatch: ["<rootDir>/test/**/*.test.ts"],
+  testMatch: ["<rootDir>/test/**/*.test.{ts,mjs}"],
 };

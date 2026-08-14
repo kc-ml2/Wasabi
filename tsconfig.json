@@ -3,12 +3,14 @@
     "target": "ES2022",
     "module": "ESNext",
     "moduleResolution": "Bundler",
+    "allowImportingTsExtensions": true,
     "strict": true,
     "esModuleInterop": true,
     "noEmit": true,
     "skipLibCheck": true
   },
   "include": [
-    "extensions/**/*.ts"
+    "extensions/**/*.ts",
+    "src/**/*.ts"
   ]
 }
