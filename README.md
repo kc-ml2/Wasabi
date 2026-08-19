@@ -24,6 +24,16 @@ Use `npm install` instead when intentionally updating dependencies and the lockf
 npm run check
 ```
 
+## Install in Pi
+
+Install all Wasabi extensions from GitHub:
+
+```bash
+pi install git:github.com/kc-ml2/Wasabi
+```
+
+After installation, use `pi config` to enable or disable individual extensions.
+
 ## Run
 
 Load the package root so Pi validates the extension declaration in `package.json`:

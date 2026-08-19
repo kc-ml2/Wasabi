@@ -12,7 +12,8 @@
   },
   "pi": {
     "extensions": [
-      "./extensions/wasabi.ts"
+      "./extensions/wasabi.ts",
+      "./extensions/litellm-session.ts"
     ]
   },
   "scripts": {
