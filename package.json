@@ -13,17 +13,22 @@
   "pi": {
     "extensions": [
       "./extensions/wasabi.ts",
-      "./extensions/litellm-session.ts"
+      "./extensions/litellm-session.ts",
+      "./extensions/crop.ts"
     ]
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "check": "npm run typecheck"
+    "test": "node --experimental-vm-modules ./node_modules/jest/bin/jest.js --runInBand",
+    "check": "npm run typecheck && npm test"
   },
   "peerDependencies": {
     "@earendil-works/pi-coding-agent": "*"
   },
   "devDependencies": {
+    "@types/jest": "^30.0.0",
+    "jest": "^30.4.2",
+    "ts-jest": "^29.4.12",
     "typescript": "^5.9.3"
   }
 }
