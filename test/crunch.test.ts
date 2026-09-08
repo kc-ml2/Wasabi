@@ -135,7 +135,7 @@ test("shutdown discards a queued restart", async () => {
 test("summary uses its own selected model and LiteLLM session headers", async () => {
   const h = createHarness();
   h.ctx.model = { provider: "anthropic", id: "conversation-model" };
-  h.entries.push({ type: "custom", customType: "confirm-edits-model", data: { key: "openai/summary-model" } });
+  h.entries.push({ type: "custom", customType: "crunch-model", data: { key: "openai/summary-model" } });
   await h.emit("session_start");
   await h.command("on");
   const a = writeCall();
