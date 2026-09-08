@@ -21,7 +21,6 @@ const MAX_INPUT_CHARS = 20_000;
 const MAX_SUMMARY_CHARS = 240;
 
 const MODEL_STATE_TYPE = "crunch-model";
-const LEGACY_MODEL_STATE_TYPE = "confirm-edits-model";
 const MODE_STATE_TYPE = "crunch-mode";
 const USE_ACTIVE_MODEL = "Use current conversation model";
 const APPROVE = "Approve";
@@ -92,7 +91,7 @@ export default function crunchExtension(pi: ExtensionAPI, summarize: typeof comp
     highlights.clear();
     for (const entry of ctx.sessionManager.getBranch()) {
       if (entry.type !== "custom") continue;
-      if (entry.customType === MODEL_STATE_TYPE || entry.customType === LEGACY_MODEL_STATE_TYPE) {
+      if (entry.customType === MODEL_STATE_TYPE) {
         const key = (entry.data as { key?: unknown } | undefined)?.key;
         summaryModelKey = typeof key === "string" ? key : undefined;
       } else if (entry.customType === MODE_STATE_TYPE) {

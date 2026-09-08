@@ -125,8 +125,7 @@ It is **OFF by default**. Run these commands before starting a task:
 
 `/crunch` without an argument only shows usage; it does not toggle the mode.
 `/crunch-model` opens the summary-model picker. Mode and model choices are saved
-on the active session branch and restored on reload/resume. Existing
-`confirm-edits-model` entries are also recognized.
+on the active session branch and restored on reload/resume.
 
 ### Review and feedback
 
@@ -191,15 +190,9 @@ session history. Reloading restores the normal full-diff display for old calls.
   provider requests in LiteLLM; it does not add summaries to Pi's conversation
   history or account for their usage in Pi's session totals.
 
-### Migrating the standalone Crunch extension
+### Local testing
 
-Do **not** load Wasabi's Crunch alongside the old
-`~/.pi/agent/extensions/crunch.ts` (or `confirm-edits.ts`). Disable the standalone
-copy in `pi config` before enabling the package copy, then run `/reload`.
-Otherwise command registrations and approval handlers can run twice. Installing
-Wasabi does not remove or modify your standalone extension or its session state.
-
-For isolated local testing without loading the global copy:
+To load only this package for local testing:
 
 ```bash
 pi --offline --no-session --no-extensions -e .
