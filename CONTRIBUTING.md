@@ -98,7 +98,7 @@ A pull request should briefly describe:
 
 Draft pull requests are encouraged for early feedback.
 
-At least one other core contributor should review non-trivial changes. The preferred merge method is squash merge, followed by deletion of the branch.
+At least one other core contributor should review non-trivial changes. The preferred merge method is rebase merge, followed by deletion of the branch.
 
 ## Architecture Changes
 
