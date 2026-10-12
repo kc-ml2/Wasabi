@@ -2,7 +2,7 @@
   "name": "pi-wasabi",
   "version": "0.0.1",
   "private": true,
-  "description": "Pi workflow extensions for session cropping, LiteLLM tracking, and Crunch file-change review.",
+  "description": "Pi workflow extensions for prompt auditing, session cropping, LiteLLM tracking, and Crunch file-change review.",
   "type": "module",
   "keywords": [
     "pi-package"
@@ -15,13 +15,16 @@
       "./extensions/wasabi.ts",
       "./extensions/litellm-session.ts",
       "./extensions/crop.ts",
-      "./extensions/crunch.ts"
+      "./extensions/crunch.ts",
+      "./extensions/prompt-audit.ts"
     ]
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
     "test": "node --experimental-vm-modules ./node_modules/jest/bin/jest.js --runInBand",
-    "check": "npm run typecheck && npm test"
+    "check": "npm run typecheck && npm test",
+    "audit:evaluate": "node --import tsx extensions/prompt-audit/scripts/evaluate.ts",
+    "audit:smoke": "node --import tsx extensions/prompt-audit/scripts/smoke.ts"
   },
   "peerDependencies": {
     "@earendil-works/pi-ai": "*",
@@ -35,6 +38,7 @@
     "@types/jest": "^30.0.0",
     "jest": "^30.4.2",
     "ts-jest": "^29.4.12",
+    "tsx": "^4.23.15",
     "typescript": "^5.9.3"
   }
 }

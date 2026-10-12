@@ -1,0 +1,23 @@
+{
+  "jev": {
+    "url": "https://api.typesafe.ai/v1/systemone",
+    "model": "jev-1.13.0",
+    "apiKeyEnv": "TYPESAFE_API_KEY",
+    "timeoutMs": 1500
+  },
+  "context": {
+    "recentMessages": 8,
+    "maxContextChars": 16000,
+    "maxPromptChars": 24000,
+    "includeConversation": true,
+    "includeSystemPrompt": false,
+    "includeCwd": false
+  },
+  "policy": {
+    "askThreshold": 0.85,
+    "observeThreshold": 0.75,
+    "uncertaintyLow": 0.35,
+    "uncertaintyHigh": 0.65
+  },
+  "approvedConventions": []
+}

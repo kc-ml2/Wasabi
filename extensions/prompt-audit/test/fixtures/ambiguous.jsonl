@@ -1,0 +1,10 @@
+{"id":"ambiguous-01","text":"Update it and run the tests.","expected":"review","kind":"ambiguous_reference"}
+{"id":"ambiguous-02","text":"Make the service fast enough for production.","expected":"review","kind":"undefined_term"}
+{"id":"ambiguous-03","text":"Delete the old file.","expected":"review","kind":"missing_target"}
+{"id":"ambiguous-04","text":"Use version 4 for the migration.","expected":"review","kind":"missing_context"}
+{"id":"ambiguous-05","text":"Keep every response under 100 ms but wait at least 200 ms before returning.","expected":"block","kind":"contradiction"}
+{"id":"ambiguous-06","text":"Upload 10 m of logs.","expected":"review","kind":"numeric_or_unit_ambiguity"}
+{"id":"ambiguous-07","text":"Ship it next Friday.","expected":"review","kind":"temporal_ambiguity"}
+{"id":"ambiguous-08","text":"Edit src/paresr.ts and deploy.","expected":"review","kind":"critical_typo"}
+{"id":"ambiguous-09","text":"Apply the previous branch's fix here.","expected":"review","kind":"context_mismatch"}
+{"id":"ambiguous-10","text":"Make it clean and complete.","expected":"review","kind":"missing_acceptance_criteria"}

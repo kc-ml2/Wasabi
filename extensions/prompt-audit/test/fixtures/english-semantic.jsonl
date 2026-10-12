@@ -1,0 +1,2 @@
+{"id":"english-semantic-01","text":"Do not remove tests except failing tests should remain.","expected":"review"}
+{"id":"english-semantic-02","text":"Copy A to B after it deletes it.","expected":"review"}

@@ -1,0 +1,2 @@
+{"id":"contradiction-01","text":"Do not change public APIs, and rename every exported function.","expected":"block"}
+{"id":"contradiction-02","text":"Store the audit forever but persist no audit data.","expected":"block"}

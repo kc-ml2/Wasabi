@@ -1,6 +1,6 @@
 # Wasabi
 
-Wasabi is a [Pi](https://github.com/earendil-works/pi) extension package with session cropping, LiteLLM session tracking, and Crunch file-change review. Each extension can be enabled independently with `pi config`.
+Wasabi is a [Pi](https://github.com/earendil-works/pi) extension package with prompt auditing, session cropping, LiteLLM session tracking, and Crunch file-change review. Each extension can be enabled independently with `pi config`.
 
 ## Requirements
 
@@ -200,3 +200,14 @@ pi --offline --no-session --no-extensions -e .
 
 Run `/crunch on`, then review a small `edit` call. A configured model is needed
 for AI summaries; without one, the approval gate uses a plain fallback summary.
+
+## Prompt audit
+
+Prompt auditing is **off by default**. Set `TYPESAFE_API_KEY` and run `/audit on`
+to use fast JEV screening followed by Pi-model review for strong findings. JEV
+failures fall back to the Pi reviewer. Existing `/audit`, `/audit-english`,
+`/audit-status`, `--audit-model`, saved settings, and experiment workflows are
+preserved. See [prompt audit setup, commands, and privacy](extensions/prompt-audit/README.md).
+
+Use `npm run audit:smoke` to verify real Pi loading and `npm run audit:evaluate`
+to validate the offline evaluation fixtures.
