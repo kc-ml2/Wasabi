@@ -6,6 +6,8 @@ export const AUTOMATION_ENTRY_TYPE = "wasabi-automation";
 /** Session configuration, separate from the main model and conversation. */
 export class WasabiAutomation {
   private preference: boolean | undefined;
+  private activationGeneration = 0;
+  activation_pending = false;
 
   constructor(
     private readonly pi: Pick<ExtensionAPI, "appendEntry">,
@@ -17,6 +19,8 @@ export class WasabiAutomation {
   }
 
   restore(ctx: ExtensionContext): void {
+    this.activationGeneration++;
+    this.activation_pending = false;
     this.model.restore(ctx);
     this.preference = this.model.selectedKey ? true : undefined;
     for (const entry of ctx.sessionManager.getBranch()) {
@@ -40,13 +44,28 @@ export class WasabiAutomation {
   /** First ordinary input initializes checking only after explicit selection. */
   async shouldCheck(ctx: ExtensionContext): Promise<boolean> {
     if (this.preference === false) return false;
-    if (!this.model.selectedKey && !await this.selectModel(ctx)) return false;
+    if (!this.model.selectedKey) {
+      const generation = this.activationGeneration;
+      this.activation_pending = true;
+      try {
+        if (!await this.selectModel(ctx) || generation !== this.activationGeneration) return false;
+      } finally {
+        if (generation === this.activationGeneration) this.activation_pending = false;
+      }
+    }
     if (this.preference === undefined) this.save(true);
     return this.enabled;
   }
 
   async setEnabled(ctx: ExtensionContext, enabled: boolean): Promise<boolean> {
-    if (enabled && !this.model.selectedKey && !await this.selectModel(ctx)) return false;
+    const generation = ++this.activationGeneration;
+    this.activation_pending = enabled && !this.model.selectedKey;
+    try {
+      if (this.activation_pending && !await this.selectModel(ctx)) return false;
+      if (generation !== this.activationGeneration) return false;
+    } finally {
+      if (generation === this.activationGeneration) this.activation_pending = false;
+    }
     this.save(enabled);
     ctx.ui.notify(`Wasabi automatic checking: ${enabled ? "on" : "off"}`, "info");
     return true;

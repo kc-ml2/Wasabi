@@ -12,6 +12,12 @@ checking. Choosing another model after `/wasabi off` preserves the off setting.
 The toggle is stored as a `wasabi-automation` custom session configuration entry
 and restored with the dedicated model when opening or switching sessions.
 
+While first-use model selection is pending, inputs wait without authenticating or
+calling a model. Concurrent first-use inputs share the chooser. Wasabi identifies
+this selection in the status area. Turning checking off while selection is pending
+preserves the off setting even if the choice completes later; use `/wasabi on` to
+reactivate. A choice from a previous session cannot configure the current session.
+
 The model client prompts for selection before its first checking or clarification
 call. Dismissing selection prevents the call. It never falls back to the main
 session model, including when the selected model becomes unavailable or loses

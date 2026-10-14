@@ -51,6 +51,25 @@ test("dismissed first selection leaves checking off and allows a later selection
   expect(await h.automation.shouldCheck(h.ctx)).toBe(true);
 });
 
+test.each(["ordinary input", "on command"])("off during pending %s cannot be overwritten by late selection", async mode => {
+  const h = harness();
+  let choose!: (choice: string) => void;
+  h.ctx.ui.select.mockImplementation(() => new Promise(resolve => { choose = resolve; }));
+  const pending = mode === "ordinary input" ? h.automation.shouldCheck(h.ctx)
+    : h.automation.setEnabled(h.ctx, true);
+  expect(h.automation.activation_pending).toBe(true);
+  expect(h.automation.enabled).toBe(false);
+  await h.automation.setEnabled(h.ctx, false);
+  expect(h.automation.activation_pending).toBe(false);
+  choose("p/light");
+  expect(await pending).toBe(false);
+  expect(h.model.selectedKey).toBe("p/light");
+  expect(h.automation.enabled).toBe(false);
+  expect(h.entries.filter(entry => entry.customType === AUTOMATION_ENTRY_TYPE)
+    .map(entry => entry.data.enabled)).toEqual([false]);
+  expect(await h.automation.setEnabled(h.ctx, true)).toBe(true);
+});
+
 test("off skips initialization and on requires a successful dedicated selection", async () => {
   const h = harness();
   await h.automation.setEnabled(h.ctx, false);

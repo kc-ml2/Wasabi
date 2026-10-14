@@ -21,7 +21,7 @@ function harness() {
         ok: true, apiKey: "dedicated-key", headers: { "x-auth": "existing" }, env: {},
       })),
     },
-    ui: { select, notify: jest.fn() },
+    ui: { select, setStatus: jest.fn(), notify: jest.fn() },
   };
   const pi = { appendEntry };
   const client = new WasabiModel(pi as any, invoke);
@@ -52,6 +52,63 @@ test("dismissed first selection never invokes the main model", async () => {
   await expect(h.client.complete(h.ctx, checking)).rejects.toThrow("Select a dedicated Wasabi model");
   expect(h.invoke).not.toHaveBeenCalled();
   expect(h.pi.appendEntry).not.toHaveBeenCalled();
+});
+
+test("concurrent first calls share selection and never authenticate while it is pending", async () => {
+  const h = harness();
+  let choose!: (choice: string) => void;
+  h.select.mockImplementation(() => new Promise(resolve => { choose = resolve; }));
+  const first = h.client.complete(h.ctx, checking);
+  const second = h.client.complete(h.ctx, clarification);
+  h.ctx.model = { provider: "other", id: "changed-while-selecting" };
+  expect(h.select).toHaveBeenCalledTimes(1);
+  expect(h.invoke).not.toHaveBeenCalled();
+  expect(h.ctx.modelRegistry.getApiKeyAndHeaders).not.toHaveBeenCalled();
+  choose("provider/user-chosen-model");
+  await Promise.all([first, second]);
+  expect(h.invoke.mock.calls.map(call => call[0])).toEqual([h.dedicated, h.dedicated]);
+});
+
+test("a selection from a previous session cannot configure or call the new session", async () => {
+  const h = harness();
+  let choose!: (choice: string) => void;
+  h.select.mockImplementation(() => new Promise(resolve => { choose = resolve; }));
+  const pending = h.client.complete(h.ctx, checking);
+  h.client.restore(h.ctx);
+  choose("provider/user-chosen-model");
+  await expect(pending).rejects.toThrow("Select a dedicated Wasabi model");
+  expect(h.client.selectedKey).toBeUndefined();
+  expect(h.pi.appendEntry).not.toHaveBeenCalled();
+  expect(h.invoke).not.toHaveBeenCalled();
+});
+
+test("ordinary input is held before selection and uses the dedicated model after main model changes", async () => {
+  const h = harness();
+  const events: Record<string, any> = {};
+  const commands: Record<string, any> = {};
+  h.invoke.mockResolvedValue({ stopReason: "stop", content: [{ type: "text", text:
+    JSON.stringify({ missing_options: [], recommended_combination: [] }) }] });
+  wasabi({ ...h.pi,
+    registerCommand: (name: string, command: any) => { commands[name] = command; },
+    on: (name: string, callback: any) => { events[name] = callback; },
+  } as any, h.invoke);
+  let choose!: (choice: string) => void;
+  h.select.mockImplementation(() => new Promise(resolve => { choose = resolve; }));
+  let returned = false;
+  const pending = events.input({ source: "interactive", text: "Implement it" }, h.ctx)
+    .then((result: any) => { returned = true; return result; });
+  expect(returned).toBe(false);
+  expect(h.invoke).not.toHaveBeenCalled();
+  h.ctx.model = { provider: "other", id: "new-main" };
+  choose("provider/user-chosen-model");
+  expect(await pending).toEqual({ action: "continue" });
+  await events.input({ source: "rpc", text: "Research it" }, h.ctx);
+  expect(h.invoke.mock.calls.map(call => call[0])).toEqual([h.dedicated, h.dedicated]);
+  expect(h.select).toHaveBeenCalledTimes(1);
+  await commands.wasabi.handler("off", h.ctx);
+  await commands["wasabi-model"].handler("provider/main-model", h.ctx);
+  await events.input({ source: "interactive", text: "Keep checking off" }, h.ctx);
+  expect(h.invoke).toHaveBeenCalledTimes(2);
 });
 
 test("checking and clarification keep the dedicated model after the main model changes", async () => {

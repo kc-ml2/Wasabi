@@ -6,6 +6,8 @@ export const MODEL_ENTRY_TYPE = "wasabi-model";
 /** One explicitly selected model shared by checking and clarification calls. */
 export class WasabiModel {
   private key: string | undefined;
+  private selection: Promise<boolean> | undefined;
+  private selectionGeneration = 0;
 
   constructor(
     private readonly pi: Pick<ExtensionAPI, "appendEntry">,
@@ -15,6 +17,9 @@ export class WasabiModel {
   get selectedKey(): string | undefined { return this.key; }
 
   restore(ctx: ExtensionContext): void {
+    if (this.selection && ctx.hasUI) ctx.ui.setStatus("wasabi", undefined);
+    this.selectionGeneration++;
+    this.selection = undefined;
     this.key = undefined;
     for (const entry of ctx.sessionManager.getBranch()) {
       if (entry.type !== "custom" || entry.customType !== MODEL_ENTRY_TYPE) continue;
@@ -24,6 +29,17 @@ export class WasabiModel {
   }
 
   async select(ctx: ExtensionContext, requested = ""): Promise<boolean> {
+    // Ordinary inputs share the pending chooser instead of opening competing dialogs.
+    if (!requested.trim() && this.selection) return this.selection;
+    if (this.selection && requested.trim() && ctx.hasUI) ctx.ui.setStatus("wasabi", undefined);
+    const generation = ++this.selectionGeneration;
+    const pending = this.choose(ctx, requested, generation);
+    this.selection = pending;
+    try { return await pending; }
+    finally { if (this.selection === pending) this.selection = undefined; }
+  }
+
+  private async choose(ctx: ExtensionContext, requested: string, generation: number): Promise<boolean> {
     const keys = ctx.modelRegistry.getAvailable().map(model => `${model.provider}/${model.id}`);
     if (!keys.length) {
       ctx.ui.notify("No authenticated models are available for Wasabi.", "error");
@@ -31,10 +47,18 @@ export class WasabiModel {
     }
     const explicit = requested.trim();
     if (!explicit && !ctx.hasUI) return false;
-    const choice = explicit || await ctx.ui.select(
-      "Wasabi · Choose a lightweight model for checking and clarification",
-      keys,
-    );
+    let choice: string | undefined = explicit;
+    if (!explicit) {
+      ctx.ui.setStatus("wasabi", "Wasabi · Selecting dedicated model · Main session paused");
+      try {
+        choice = await ctx.ui.select(
+          "Wasabi · Choose a lightweight model for checking and clarification", keys,
+        );
+      } finally {
+        if (generation === this.selectionGeneration) ctx.ui.setStatus("wasabi", undefined);
+      }
+    }
+    if (generation !== this.selectionGeneration) return false;
     if (!choice) return false;
     if (!keys.includes(choice)) {
       ctx.ui.notify(`Wasabi model is not available: ${choice}`, "error");
