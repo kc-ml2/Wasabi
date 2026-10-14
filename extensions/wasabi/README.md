@@ -4,6 +4,14 @@ Use `/wasabi-model` to choose a lightweight model from Pi's authenticated models
 or `/wasabi-model provider/model-id` to select one explicitly. The user decides
 which model is lightweight; no model IDs or performance thresholds are imposed.
 
+The first ordinary input asks for this selection and enables automatic checking
+after a successful choice. Cancelling selection leaves checking disabled. Use
+`/wasabi off` to disable automatic checking and `/wasabi on` to enable it again.
+Turning it on requires a dedicated model; cancelling that choice does not enable
+checking. Choosing another model after `/wasabi off` preserves the off setting.
+The toggle is stored as a `wasabi-automation` custom session configuration entry
+and restored with the dedicated model when opening or switching sessions.
+
 The model client prompts for selection before its first checking or clarification
 call. Dismissing selection prevents the call. It never falls back to the main
 session model, including when the selected model becomes unavailable or loses
