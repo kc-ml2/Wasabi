@@ -1,5 +1,5 @@
 import { jest } from "@jest/globals";
-import wasabi from "../wasabi.ts";
+import wasabi from "./index.ts";
 import { CHECK_SYSTEM_PROMPT, conversationSource, parseCheckResponse, WasabiChecker } from "./checker.ts";
 
 const conversation = [

@@ -1,5 +1,5 @@
 import { jest } from "@jest/globals";
-import wasabi from "../wasabi.ts";
+import wasabi from "./index.ts";
 
 const active = "Wasabi · Private clarification · Main session paused";
 const result = {

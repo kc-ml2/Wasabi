@@ -1,5 +1,5 @@
 import { jest } from "@jest/globals";
-import wasabi from "../wasabi.ts";
+import wasabi from "./index.ts";
 import { AUTOMATION_ENTRY_TYPE, WasabiAutomation } from "./automation.ts";
 import { WasabiModel } from "./model.ts";
 

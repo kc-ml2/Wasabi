@@ -12,7 +12,7 @@
   },
   "pi": {
     "extensions": [
-      "./extensions/wasabi.ts",
+      "./extensions/wasabi/index.ts",
       "./extensions/litellm-session.ts",
       "./extensions/crop.ts",
       "./extensions/crunch.ts"

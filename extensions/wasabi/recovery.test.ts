@@ -1,7 +1,7 @@
 import { jest } from "@jest/globals";
 import { WasabiRequest, CALL_TIMEOUT_MS } from "./recovery.ts";
 import { WasabiChecker } from "./checker.ts";
-import wasabi from "../wasabi.ts";
+import wasabi from "./index.ts";
 
 const quiet: any = { hasUI: false };
 const response = { stopReason: "stop", content: [{ type: "text", text: '{"missing_options":[],"recommended_combination":[]}' }] };

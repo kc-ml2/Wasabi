@@ -1,5 +1,5 @@
 import { jest } from "@jest/globals";
-import wasabi from "../wasabi.ts";
+import wasabi from "./index.ts";
 import { applyClarificationActions, WasabiClarification, reviewClarification } from "./clarification.ts";
 import type { CheckedRequest } from "./checker.ts";
 

@@ -1,6 +1,6 @@
 import { jest } from "@jest/globals";
 import { MODEL_ENTRY_TYPE, WasabiModel } from "./model.ts";
-import wasabi from "../wasabi.ts";
+import wasabi from "./index.ts";
 
 function harness() {
   const dedicated = { provider: "provider", id: "user-chosen-model" };

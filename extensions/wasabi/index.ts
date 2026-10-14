@@ -1,10 +1,10 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { WasabiModel } from "./wasabi/model.ts";
-import { WasabiAutomation } from "./wasabi/automation.ts";
-import { WasabiChecker } from "./wasabi/checker.ts";
+import { WasabiModel } from "./model.ts";
+import { WasabiAutomation } from "./automation.ts";
+import { WasabiChecker } from "./checker.ts";
 import { complete } from "@earendil-works/pi-ai/compat";
-import { WasabiRequest } from "./wasabi/recovery.ts";
-import { reviewClarification } from "./wasabi/clarification.ts";
+import { WasabiRequest } from "./recovery.ts";
+import { reviewClarification } from "./clarification.ts";
 
 export default function wasabi(pi: ExtensionAPI, invoke: typeof complete = complete) {
   const model = new WasabiModel(pi, invoke);
