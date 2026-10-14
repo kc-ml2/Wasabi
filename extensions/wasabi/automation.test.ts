@@ -14,7 +14,7 @@ function harness() {
     hasUI: true,
     sessionManager: { getBranch: () => entries },
     modelRegistry: {
-      getAvailable: () => [{ provider: "p", id: "light" }],
+      getAvailable: () => [{ provider: "p", id: "light" }, { provider: "p", id: "other" }],
       getApiKeyAndHeaders: async () => ({ ok: true, apiKey: "test-key" }),
     },
     ui: {
@@ -33,10 +33,14 @@ test("first ordinary input enables checking only after model selection resolves"
   h.ctx.ui.select.mockImplementation(() => new Promise(resolve => { choose = resolve; }));
   const pending = h.automation.shouldCheck(h.ctx);
   expect(h.automation.enabled).toBe(false);
+  expect(h.automation.initial_setup_completed).toBe(false);
+  expect(h.automation.activation_pending).toBe(true);
   expect(h.pi.appendEntry).not.toHaveBeenCalled();
   choose("p/light");
   expect(await pending).toBe(true);
   expect(h.automation.enabled).toBe(true);
+  expect(h.automation.initial_setup_completed).toBe(true);
+  expect(h.automation.activation_pending).toBe(false);
   expect(h.pi.appendEntry).toHaveBeenCalledWith(AUTOMATION_ENTRY_TYPE, { enabled: true });
   expect(await h.automation.shouldCheck(h.ctx)).toBe(true);
   expect(h.ctx.ui.select).toHaveBeenCalledTimes(1);
@@ -47,27 +51,67 @@ test("dismissed first selection leaves checking off and allows a later selection
   h.ctx.ui.select.mockResolvedValueOnce(undefined);
   expect(await h.automation.shouldCheck(h.ctx)).toBe(false);
   expect(h.automation.enabled).toBe(false);
+  expect(h.automation.initial_setup_completed).toBe(false);
+  expect(h.automation.activation_pending).toBe(false);
   expect(h.pi.appendEntry).not.toHaveBeenCalled();
   expect(await h.automation.shouldCheck(h.ctx)).toBe(true);
 });
 
-test.each(["ordinary input", "on command"])("off during pending %s cannot be overwritten by late selection", async mode => {
+test.each(["ordinary input", "on command", "model command"])("off during pending %s cannot be overwritten by late selection", async mode => {
   const h = harness();
   let choose!: (choice: string) => void;
   h.ctx.ui.select.mockImplementation(() => new Promise(resolve => { choose = resolve; }));
   const pending = mode === "ordinary input" ? h.automation.shouldCheck(h.ctx)
-    : h.automation.setEnabled(h.ctx, true);
+    : mode === "on command" ? h.automation.setEnabled(h.ctx, true)
+      : h.automation.selectModel(h.ctx);
   expect(h.automation.activation_pending).toBe(true);
   expect(h.automation.enabled).toBe(false);
   await h.automation.setEnabled(h.ctx, false);
   expect(h.automation.activation_pending).toBe(false);
   choose("p/light");
-  expect(await pending).toBe(false);
+  expect(await pending).toBe(mode === "model command");
   expect(h.model.selectedKey).toBe("p/light");
+  expect(h.automation.initial_setup_completed).toBe(true);
   expect(h.automation.enabled).toBe(false);
   expect(h.entries.filter(entry => entry.customType === AUTOMATION_ENTRY_TYPE)
     .map(entry => entry.data.enabled)).toEqual([false]);
   expect(await h.automation.setEnabled(h.ctx, true)).toBe(true);
+});
+
+test("direct first model selection records pending activation until the choice completes", async () => {
+  const h = harness();
+  let choose!: (choice: string) => void;
+  h.ctx.ui.select.mockImplementation(() => new Promise(resolve => { choose = resolve; }));
+  const pending = h.automation.selectModel(h.ctx);
+  expect(h.automation.activation_pending).toBe(true);
+  expect(h.automation.enabled).toBe(false);
+  expect(h.automation.initial_setup_completed).toBe(false);
+  choose("p/light");
+  expect(await pending).toBe(true);
+  expect(h.automation.activation_pending).toBe(false);
+  expect(h.automation.initial_setup_completed).toBe(true);
+  expect(h.automation.enabled).toBe(true);
+});
+
+test("off before first selection survives setup, reselection, main model changes and restore", async () => {
+  const h = harness();
+  await h.automation.setEnabled(h.ctx, false);
+  expect(h.automation.initial_setup_completed).toBe(false);
+  await h.automation.selectModel(h.ctx, "p/light");
+  expect(h.automation.initial_setup_completed).toBe(true);
+  expect(h.automation.enabled).toBe(false);
+  await h.automation.selectModel(h.ctx, "p/other");
+  h.ctx.model = { provider: "main", id: "changed" };
+  expect(await h.automation.shouldCheck(h.ctx)).toBe(false);
+  const restored = new WasabiAutomation(h.pi, new WasabiModel(h.pi));
+  restored.restore(h.ctx);
+  expect(restored.initial_setup_completed).toBe(true);
+  expect(restored.enabled).toBe(false);
+  expect(restored.activation_pending).toBe(false);
+  expect(await restored.setEnabled(h.ctx, true)).toBe(true);
+  expect(await restored.shouldCheck(h.ctx)).toBe(true);
+  expect(h.model.selectedKey).toBe("p/other");
+  expect(h.ctx.ui.select).not.toHaveBeenCalled();
 });
 
 test("off skips initialization and on requires a successful dedicated selection", async () => {
@@ -102,12 +146,14 @@ test("restores toggles per session and resets configuration in a new session", a
   const restored = new WasabiAutomation(h.pi, new WasabiModel(h.pi));
   restored.restore(h.ctx);
   expect(restored.enabled).toBe(false);
+  expect(restored.initial_setup_completed).toBe(true);
   await restored.setEnabled(h.ctx, true);
   restored.restore(h.ctx);
   expect(restored.enabled).toBe(true);
   h.entries.length = 0;
   restored.restore(h.ctx);
   expect(restored.enabled).toBe(false);
+  expect(restored.initial_setup_completed).toBe(false);
   expect(await restored.shouldCheck(h.ctx)).toBe(true);
 });
 

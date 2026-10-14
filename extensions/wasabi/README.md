@@ -11,6 +11,13 @@ Turning it on requires a dedicated model; cancelling that choice does not enable
 checking. Choosing another model after `/wasabi off` preserves the off setting.
 The toggle is stored as a `wasabi-automation` custom session configuration entry
 and restored with the dedicated model when opening or switching sessions.
+The first `/wasabi-model` selection also enables checking unless `/wasabi off`
+was explicitly chosen. `enabled` stays false until a model is selected;
+`activation_pending` separately records a first-use or `/wasabi on` activation
+waiting for selection. `initial_setup_completed` records successful first setup
+and is restored from the session's dedicated model selection. Reselecting a
+model after setup preserves the existing toggle, including an explicit off
+chosen before the first model selection.
 
 While first-use model selection is pending, inputs wait without authenticating or
 calling a model. Concurrent first-use inputs share the chooser. Wasabi identifies
