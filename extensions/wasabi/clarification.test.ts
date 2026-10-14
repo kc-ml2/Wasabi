@@ -1,0 +1,116 @@
+import { jest } from "@jest/globals";
+import wasabi from "../wasabi.ts";
+import { applyClarificationActions, WasabiClarification, reviewClarification } from "./clarification.ts";
+import type { CheckedRequest } from "./checker.ts";
+
+const request: CheckedRequest = { check: {
+  original_prompt: "Compare the databases", conversation_context: [{ role: "user", text: "Performance or deployment" }],
+  information_sources: ["conversation"], missing_options: [{ id: "focus", question: "Which focus?",
+    evidence: { message_index: 0, quote: "Performance or deployment" }, available_choices: [
+      { id: "performance", label: "Performance", evidence: { message_index: 0, quote: "Performance" } },
+      { id: "deployment", label: "Deployment", evidence: { message_index: 0, quote: "deployment" } },
+    ] }], recommended_combination: [{ option_id: "focus", choice_id: "performance" }],
+} };
+
+function ui(actions: (string | undefined)[], edits: (string | undefined)[] = []) {
+  return { hasUI: true, ui: {
+    select: jest.fn<any>(async () => actions.shift()),
+    editor: jest.fn<any>(async () => edits.shift()), setStatus: jest.fn(), notify: jest.fn(),
+  } } as any;
+}
+
+test("current draft needs approval, editing revokes approval, and forwarding is claimed once", () => {
+  const state = new WasabiClarification("Original");
+  expect(state.apply([{ type: "approve" }, { type: "forward" }])).toBeUndefined();
+  state.apply([{ type: "answer", question: "Focus?", answer: "Performance" }, { type: "finish" }, { type: "approve" }]);
+  expect(state.approved).toBe(true);
+  state.apply([{ type: "edit", text: "Edited" }]);
+  expect(state.approved).toBe(false);
+  expect(state.apply([{ type: "forward" }])).toBeUndefined();
+  expect(state.apply([{ type: "approve" }, { type: "forward" }])).toBe("Edited");
+  expect(state.apply([{ type: "forward" }, { type: "edit", text: "Again" }, { type: "approve" }, { type: "forward" }])).toBeUndefined();
+  expect(state.forwarded).toBe(true);
+});
+
+test("no question count limit; history remains private and latest answers form the draft", () => {
+  const state = new WasabiClarification("Original");
+  for (let index = 0; index < 250; index++) state.apply([{ type: "answer", question: `Question ${index}`, answer: `Answer ${index}` }]);
+  state.apply([{ type: "answer", question: "Question 0", answer: "Corrected" }, { type: "finish" }]);
+  expect(state.clarification_history).toHaveLength(251);
+  expect(state.final_prompt).toContain("Answer 249");
+  expect(state.final_prompt).toContain("- Corrected");
+  expect(state.final_prompt).not.toContain("Question 0");
+  expect(state.final_prompt).not.toContain("Answer 0");
+  expect(state.approved).toBe(false);
+});
+
+test("cancelled or empty drafts cannot be approved or forwarded", () => {
+  const state = new WasabiClarification("Original");
+  state.apply([{ type: "finish" }, { type: "edit", text: " " }, { type: "approve" }]);
+  expect(state.approved).toBe(false);
+  expect(state.apply([{ type: "forward" }])).toBeUndefined();
+  state.apply([{ type: "cancel" }]);
+  expect(state.apply([{ type: "edit", text: "Late" }, { type: "approve" }, { type: "forward" }])).toBeUndefined();
+});
+
+test("users finish immediately without accepting recommendations, then edit and approve", async () => {
+  const ctx = ui(["Finish clarification and review prompt", "Edit final prompt", "Approve and send"], ["User's final text"]);
+  expect(await reviewClarification(ctx, request)).toBe("User's final text");
+  expect(ctx.ui.select.mock.calls[1][0]).toContain("Compare the databases");
+  expect(ctx.ui.select.mock.calls[1][0]).not.toContain("Performance");
+  expect(ctx.ui.select.mock.calls[2][0]).toContain("User's final text");
+});
+
+test("finish is available inside individual questions and no answer is implicitly chosen", async () => {
+  const ctx = ui(["1. Which focus?", "Finish clarification and review prompt", "Approve and send"]);
+  expect(await reviewClarification(ctx, request)).toBe(request.check.original_prompt);
+  expect(ctx.ui.select.mock.calls[1][1]).toContain("Finish clarification and review prompt");
+});
+
+test("UI allows arbitrarily many questions and answers before review", async () => {
+  const actions = Array.from({ length: 120 }, () => ["1. Which focus?", "2. Deployment"]).flat();
+  const ctx = ui([...actions, "Finish clarification and review prompt", "Approve and send"]);
+  expect(await reviewClarification(ctx, request)).toBe("Compare the databases\n\n- Deployment");
+  expect(ctx.ui.select).toHaveBeenCalledTimes(242);
+});
+
+test.each([undefined, "Cancel request"])("dismissal or cancellation (%s) during review never forwards", async action => {
+  expect(await reviewClarification(ui(["Confirm recommended combination", action]), request)).toBeUndefined();
+});
+
+test("input entry point transforms only approved final text; private dialogs never enter session", async () => {
+  const ctx = ui(["Confirm recommended combination", "Edit final prompt", "Approve and send"], ["Final approved prompt"]);
+  const entries: any[] = [{ type: "message", message: { role: "user", content: "Performance or deployment" } }];
+  ctx.sessionManager = { getBranch: () => entries };
+  ctx.modelRegistry = { getAvailable: () => [{ provider: "p", id: "light" }],
+    getApiKeyAndHeaders: async () => ({ ok: true, apiKey: "key" }) };
+  const handlers: Record<string, any> = {};
+  const commands: Record<string, any> = {};
+  const pi: any = { on: (name: string, handler: any) => { handlers[name] = handler; },
+    registerCommand: (name: string, command: any) => { commands[name] = command; },
+    appendEntry: jest.fn(), sendMessage: jest.fn(), sendUserMessage: jest.fn() };
+  const invoke = jest.fn<any>(async () => ({ stopReason: "stop", content: [{ type: "text", text: JSON.stringify({
+    missing_options: request.check.missing_options, recommended_combination: request.check.recommended_combination,
+  }) }] }));
+  wasabi(pi, invoke);
+  await commands["wasabi-model"].handler("p/light", ctx);
+  const before = [...entries];
+  const images: any[] = [];
+  expect(await handlers.input({ source: "interactive", text: request.check.original_prompt, images }, ctx))
+    .toEqual({ action: "transform", text: "Final approved prompt", images });
+  expect(entries).toEqual(before);
+  expect(pi.sendMessage).not.toHaveBeenCalled();
+  expect(pi.sendUserMessage).not.toHaveBeenCalled();
+  expect(invoke).toHaveBeenCalledTimes(1);
+});
+
+test("functional action entry point uses the same approval and single-forwarding guards", () => {
+  const state = new WasabiClarification("Original");
+  expect(applyClarificationActions([{ type: "finish" }, { type: "approve" },
+    { type: "edit", text: "Current draft" }, { type: "forward" }], state)).toBeUndefined();
+  expect(state.approved).toBe(false);
+  expect(applyClarificationActions([{ type: "approve" }, { type: "forward" }], state)).toBe("Current draft");
+  expect(applyClarificationActions([{ type: "approve" }, { type: "forward" }], state)).toBeUndefined();
+  expect(applyClarificationActions([{ type: "finish" }, { type: "edit", text: "Standalone draft" },
+    { type: "approve" }, { type: "forward" }])).toBe("Standalone draft");
+});

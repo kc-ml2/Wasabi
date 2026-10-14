@@ -60,6 +60,7 @@ export class WasabiModel {
     if (!model) throw new Error(`Selected Wasabi model is unavailable: ${this.key}`);
     const auth = await ctx.modelRegistry.getApiKeyAndHeaders(model);
     if (!auth.ok) throw new Error("Authentication unavailable for the selected Wasabi model.");
+    if (options?.signal?.aborted) throw new Error("Wasabi call invalidated.");
     return this.invoke(model, conversation, {
       ...options,
       apiKey: auth.apiKey,

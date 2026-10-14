@@ -22,3 +22,61 @@ Selection is stored in a `wasabi-model` custom session entry and restored when
 opening or switching sessions. This entry is configuration, not a conversation
 message. The model module supplies model selection and invocation only; the
 clarification workflow is separate.
+
+## Conversation-based request checking
+
+When checking is enabled, every ordinary interactive or RPC input is checked by
+the dedicated model against user and assistant text in the current session branch.
+Extension-originated inputs bypass checking to avoid checking forwarded prompts
+again. No local files are read, no tools are supplied, and tool results, thinking,
+tool calls, and configuration entries are excluded. `InformationSource` provides
+the boundary for future sources; v1 registers only `conversationSource`.
+
+The checker asks for missing adjustable options even when the overall intent is
+clear, while respecting choices already settled in the conversation or request.
+Each option includes a concrete question, distinct choices, and exact supporting
+conversation quotes. Invalid evidence or incomplete recommendations are rejected.
+Wasabi shows all choices and a recommended combination. The user must explicitly
+confirm that combination or choose alternatives; dismissing the dialog confirms
+nothing. These decisions are kept privately in the checker, never appended to the
+main conversation. Requests with no missing options continue normally.
+
+## Private clarification and final review
+
+Wasabi offers the recommended combination, individual choices, and free-form
+clarifications. Questions can be revisited and more details added without a fixed
+question limit. The latest answer to each question is used in the final draft.
+Choose **Finish clarification and review prompt** at any question to review early;
+unconfirmed recommendations are excluded. Closing an answer editor returns to
+the controls. Closing a selection dialog or choosing **Cancel request** sends nothing.
+
+The review displays the original request plus explicitly supplied decisions.
+**Edit final prompt** opens Pi's editor and returns to review; editing removes any
+previous approval. **Approve and send** approves the currently displayed text and
+passes it to Pi as the transformed input exactly once. Empty drafts cannot be sent.
+Recommendation confirmation alone never approves the final prompt. Clarification
+questions, answers, and review history stay in memory and are never appended to
+the main session. Headless requests with missing options remain held. Invalid
+checker responses also hold the input rather than passing an unchecked request on.
+
+While Wasabi checks a request, asks questions, or reviews the final prompt, Pi
+shows **Wasabi · Private clarification · Main session paused** in its status area.
+The indicator clears before returning control to the main session, including
+approval, cancellation, requests needing no clarification, and errors. Dialog and
+editor titles also identify Wasabi.
+
+## Interrupted calls and recovery
+
+Each checker call has a 30-second timeout. For calls lasting over 200ms, a waiting
+selection offers **Stop waiting** (Esc also stops); finishing the call closes it.
+Timeouts, interruption, invalid responses, and provider errors show the preserved
+original request with **Retry**, **Send original unchanged**, and **Cancel request**.
+Retry retains the same request identity. Sending the original is an explicit
+approval; cancellation sends nothing. Without UI, a failure reports the original
+and holds the input.
+
+Retries, cancellation, and completion invalidate the previous call generation
+and request provider cancellation. Even if a provider ignores cancellation, late
+results cannot update the checker or forward input. A request claims forwarding
+only once, before returning its approved input to Pi. Authentication finishing
+after cancellation cannot start an obsolete provider call.

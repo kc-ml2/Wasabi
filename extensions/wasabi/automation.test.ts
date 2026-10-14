@@ -13,10 +13,13 @@ function harness() {
   const ctx: any = {
     hasUI: true,
     sessionManager: { getBranch: () => entries },
-    modelRegistry: { getAvailable: () => [{ provider: "p", id: "light" }] },
+    modelRegistry: {
+      getAvailable: () => [{ provider: "p", id: "light" }],
+      getApiKeyAndHeaders: async () => ({ ok: true, apiKey: "test-key" }),
+    },
     ui: {
       select: jest.fn<any>(async () => "p/light"),
-      notify: jest.fn(),
+      setStatus: jest.fn(), notify: jest.fn(),
     },
   };
   const model = new WasabiModel(pi);
@@ -96,7 +99,8 @@ test("extension commands and ordinary input use the automatic checking configura
   wasabi({ ...h.pi,
     registerCommand: (name: string, command: any) => { commands[name] = command; },
     on: (name: string, handler: any) => { events[name] = handler; },
-  } as any);
+  } as any, jest.fn<any>(async () => ({ content: [{ type: "text", text:
+    JSON.stringify({ missing_options: [], recommended_combination: [] }) }], stopReason: "stop" })));
   await events.session_start({}, h.ctx);
   await events.input({ source: "extension", text: "forwarded" }, h.ctx);
   expect(h.ctx.ui.select).not.toHaveBeenCalled();
