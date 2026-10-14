@@ -74,9 +74,10 @@ export function applyClarificationActions(
 }
 
 /** Local UI only: questions and answers never become Pi session messages. */
-export async function reviewClarification(ctx: ExtensionContext, request: CheckedRequest): Promise<string | undefined> {
+export async function reviewClarification(ctx: ExtensionContext, request: CheckedRequest, startReview = false): Promise<string | undefined> {
   if (!ctx.hasUI) return undefined;
   const state = new WasabiClarification(request.check.original_prompt);
+  if (startReview) state.apply([{ type: "finish" }]);
   const options = request.check.missing_options;
   const finish = "Finish clarification and review prompt";
   const cancel = "Cancel request";

@@ -74,15 +74,21 @@ editor titles also identify Wasabi.
 ## Interrupted calls and recovery
 
 Each checker call has a 30-second timeout. For calls lasting over 200ms, a waiting
-selection offers **Stop waiting** (Esc also stops); finishing the call closes it.
+selection offers **Stop waiting** (Esc also stops) and **Finish clarification and
+review prompt**. Finishing opens review immediately with the original request,
+without another model call or unconfirmed suggestions. Settling or invalidating
+the call closes the waiting dialog.
 Timeouts, interruption, invalid responses, and provider errors show the preserved
 original request with **Retry**, **Send original unchanged**, and **Cancel request**.
 Retry retains the same request identity. Sending the original is an explicit
 approval; cancellation sends nothing. Without UI, a failure reports the original
 and holds the input.
 
-Retries, cancellation, and completion invalidate the previous call generation
-and request provider cancellation. Even if a provider ignores cancellation, late
-results cannot update the checker or forward input. A request claims forwarding
-only once, before returning its approved input to Pi. Authentication finishing
+Errors, timeouts, interruption, retries, cancellation, finishing clarification,
+and completion invalidate the previous call generation and request provider
+cancellation. Even if a provider ignores cancellation, late
+results cannot update the checker, recovery state, or forward input. Each active
+call records its request ID, generation, kind, deadline, and cancellation controller;
+only responses matching that call and its permitted state are accepted. A request
+claims forwarding only once, before returning its approved input to Pi. Authentication finishing
 after cancellation cannot start an obsolete provider call.

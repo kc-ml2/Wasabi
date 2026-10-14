@@ -124,3 +124,118 @@ test("authentication resolving after cancellation cannot launch a provider call"
   await expect(pending).rejects.toThrow("invalidated");
   expect(invoke).not.toHaveBeenCalled();
 });
+
+test.each(["timeout", "interrupted"] as const)("%s revokes active call and enters recovery before a provider settles", async kind => {
+  jest.useFakeTimers();
+  let late!: (value: string) => void;
+  let signal!: AbortSignal;
+  const state = new WasabiRequest("Preserved verbatim");
+  const ctx: any = kind === "timeout" ? quiet : {
+    hasUI: true, ui: { select: async () => "Stop waiting" },
+  };
+  const pending = state.call(ctx, s => { signal = s; return new Promise<string>(resolve => { late = resolve; }); });
+  const rejected = expect(pending).rejects.toThrow("stopped");
+  const call = state.active_call!;
+  expect(call.request_id).toBe(state.request_id);
+  expect(call.deadline).toBe(Date.now() + CALL_TIMEOUT_MS);
+  expect(state.interaction_state).toBe("checking");
+  await jest.advanceTimersByTimeAsync(kind === "timeout" ? CALL_TIMEOUT_MS : 200);
+  await rejected;
+  expect(signal.aborted).toBe(true);
+  expect(state.active_call).toBeNull();
+  expect(state.call_generation).toBeGreaterThan(call.call_generation);
+  expect(state.interaction_state).toBe("recovering");
+  expect(state.failure).toMatchObject({ kind, request_id: state.request_id, call_generation: call.call_generation });
+  const failure = state.failure;
+  late("Obsolete result");
+  await Promise.resolve();
+  expect(state.failure).toBe(failure);
+  expect(state.interaction_state).toBe("recovering");
+  expect(state.original_prompt).toBe("Preserved verbatim");
+});
+
+test("an obsolete failure cannot overwrite an active retry or its result", async () => {
+  let fail!: (error: Error) => void;
+  let resolve!: (text: string) => void;
+  const state = new WasabiRequest("Original");
+  const old = state.call(quiet, () => new Promise<string>((_, reject) => { fail = reject; }));
+  const rejected = expect(old).rejects.toThrow("stopped");
+  const retry = state.call(quiet, () => new Promise<string>(done => { resolve = done; }));
+  await rejected;
+  const active = state.active_call;
+  fail(new Error("Obsolete failure"));
+  await Promise.resolve();
+  expect(state.active_call).toBe(active);
+  expect(state.failure).toBeUndefined();
+  expect(state.interaction_state).toBe("checking");
+  resolve("Current result");
+  expect(await retry).toBe("Current result");
+  expect(state.active_call).toBeNull();
+  expect(state.failure).toBeUndefined();
+});
+
+test("finish while checking opens review immediately without waiting for a cancellation-ignoring model", async () => {
+  jest.useFakeTimers();
+  let late!: (value: any) => void;
+  const invoke = jest.fn<any>(() => new Promise(resolve => { late = resolve; }));
+  const h = harness(["Finish clarification and review prompt", "Approve and send"], invoke);
+  await h.commands["wasabi-model"].handler("p/light", h.ctx);
+  const input = h.handlers.input({ source: "interactive", text: "Exact original" }, h.ctx);
+  await jest.advanceTimersByTimeAsync(200);
+  expect(await input).toEqual({ action: "transform", text: "Exact original", images: undefined });
+  expect(invoke).toHaveBeenCalledTimes(1);
+  expect((invoke.mock.calls[0][2] as any).signal.aborted).toBe(true);
+  expect(h.ctx.ui.select.mock.calls[1][0]).toContain("Review final prompt");
+  const calls = h.ctx.ui.select.mock.calls.length;
+  late(response);
+  await Promise.resolve();
+  await Promise.resolve();
+  expect(h.ctx.ui.select).toHaveBeenCalledTimes(calls);
+  expect(h.ctx.ui.setStatus).toHaveBeenLastCalledWith("wasabi", undefined);
+});
+
+test("session replacement cancels an old provider and prevents its late result from forwarding", async () => {
+  let late!: (value: any) => void;
+  const invoke = jest.fn<any>().mockImplementationOnce(() => new Promise(resolve => { late = resolve; }))
+    .mockResolvedValueOnce(response);
+  const h = harness([], invoke);
+  await h.commands["wasabi-model"].handler("p/light", h.ctx);
+  const old = h.handlers.input({ source: "interactive", text: "Old" }, h.ctx);
+  // Let automatic activation and authentication finish before replacing the session.
+  for (let turn = 0; turn < 20 && !invoke.mock.calls.length; turn++) await Promise.resolve();
+  expect(invoke).toHaveBeenCalledTimes(1);
+  await h.handlers.session_start({}, h.ctx);
+  expect(await old).toEqual({ action: "handled" });
+  late(response);
+  await Promise.resolve();
+  expect(h.ctx.ui.select).not.toHaveBeenCalled();
+});
+
+test("clarification calls also enforce a finite timeout and cancel immediately", async () => {
+  jest.useFakeTimers();
+  const state = new WasabiRequest("Original");
+  const pending = state.call(quiet, () => new Promise(() => {}), 10, "clarifying");
+  const rejected = expect(pending).rejects.toThrow("stopped");
+  const active = state.active_call!;
+  expect(active.kind).toBe("clarifying");
+  expect(state.interaction_state).toBe("clarifying");
+  await jest.advanceTimersByTimeAsync(10);
+  await rejected;
+  expect(active.controller.signal.aborted).toBe(true);
+  expect(state.interaction_state).toBe("recovering");
+  expect(state.failure?.kind).toBe("timeout");
+});
+
+test("synchronous provider failure revokes the call and preserves structured recovery evidence", async () => {
+  const state = new WasabiRequest("Original");
+  let active: typeof state.active_call;
+  await expect(state.call(quiet, () => {
+    active = state.active_call;
+    throw new Error("Synchronous failure");
+  })).rejects.toThrow("Synchronous failure");
+  expect(active!.controller.signal.aborted).toBe(true);
+  expect(state.active_call).toBeNull();
+  expect(state.interaction_state).toBe("recovering");
+  expect(state.failure).toMatchObject({ kind: "error", request_id: state.request_id,
+    call_generation: active!.call_generation, message: "Synchronous failure" });
+});

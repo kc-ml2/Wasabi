@@ -1,9 +1,9 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { WasabiModel } from "./model.ts";
 import { WasabiAutomation } from "./automation.ts";
-import { WasabiChecker } from "./checker.ts";
+import { conversationSource, WasabiChecker } from "./checker.ts";
 import { complete } from "@earendil-works/pi-ai/compat";
-import { WasabiRequest } from "./recovery.ts";
+import { WasabiRequest, WasabiReviewRequested } from "./recovery.ts";
 import { reviewClarification } from "./clarification.ts";
 
 export default function wasabi(pi: ExtensionAPI, invoke: typeof complete = complete) {
@@ -27,6 +27,7 @@ export default function wasabi(pi: ExtensionAPI, invoke: typeof complete = compl
             break;
           }
           state.invalidate();
+          state.interaction_state = "clarifying";
           const finalPrompt = await reviewClarification(ctx, request);
           if (finalPrompt !== undefined) {
             const claimed = state.forward(finalPrompt);
@@ -35,6 +36,20 @@ export default function wasabi(pi: ExtensionAPI, invoke: typeof complete = compl
           state.cancel();
         } catch (error) {
           if (state.cancelled || state.forwarded) break;
+          if (error instanceof WasabiReviewRequested) {
+            const finalPrompt = await reviewClarification(ctx, { check: {
+              original_prompt: state.original_prompt,
+              conversation_context: conversationSource.read(ctx), information_sources: [conversationSource.name],
+              missing_options: [], recommended_combination: [],
+            } }, true);
+            if (finalPrompt !== undefined) {
+              const claimed = state.forward(finalPrompt);
+              if (claimed !== undefined) return { action: "transform", text: claimed, images: event.images };
+            }
+            state.cancel();
+            break;
+          }
+          state.interaction_state = "recovering";
           if (!ctx.hasUI) {
             ctx.ui.notify(`Wasabi · Original request not sent; preserved: ${state.original_prompt}\n${String(error)}`, "error");
             state.cancel();
