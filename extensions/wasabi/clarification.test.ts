@@ -181,3 +181,30 @@ test("additional explicit details are accumulated instead of replacing earlier d
   expect(result).toContain("Include deployment steps");
   expect(result).not.toContain("Additional clarification");
 });
+
+test.each(["TypeScript", "Rust", "Kotlin", "Elixir"])(
+  "finish retains settled %s even when the model omits resolutions, and exposes unresolved choices", async language => {
+    const ctx = ui(["Finish clarification and review prompt", "Approve and send"]);
+    const result = await reviewClarification(ctx, { check: { ...request.check,
+      original_prompt: "Implement retry handling",
+      conversation_context: [{ role: "user", text: `Use ${language} for this task.` }],
+      option_resolutions: [],
+    } });
+    expect(result).toContain("Implement retry handling");
+    expect(result).toContain(language);
+    expect(result).not.toContain("Performance");
+    expect(result).not.toContain("Which focus?");
+    const [draft, unresolved] = (ctx.ui.select.mock.calls[1][0] as string).split("Unresolved options (not included in the prompt):");
+    expect(draft).toContain(language);
+    expect(unresolved).toContain("Which focus?");
+  });
+
+test("model assessment of applicability takes precedence over synchronous evidence", async () => {
+  const ctx = ui(["Finish clarification and review prompt", "Approve and send"]);
+  const result = await reviewClarification(ctx, { check: { ...request.check,
+    conversation_context: [{ role: "user", text: "Use Kotlin for the prototype." }],
+    option_resolutions: [{ id: "language", applies_to_request: false, confirmed: true, value: "Kotlin",
+      evidence: { message_index: 0, quote: "Use Kotlin for the prototype" } }],
+  } });
+  expect(result).toBe(request.check.original_prompt);
+});

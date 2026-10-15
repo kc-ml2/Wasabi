@@ -78,10 +78,14 @@ Unresolved questions appear separately and are never silently filled from
 recommendations. If checking is ended before a result exists, review explicitly
 marks the options as unassessed rather than claiming nothing is missing. A
 synchronous conversation snapshot preserves direct response-language instructions
-without waiting for the checker. It uses exact user evidence, ignores assistant
-suggestions and ambiguous or conditional directives, and gives current input
-precedence. Other task-specific decisions require the checker to assess applicability;
-when interrupted, review leaves unassessed choices visible for user editing.
+and explicit “use …” decisions (such as “Use Kotlin for this task”) without waiting
+for the checker or relying on a fixed list of implementation languages. It retains
+exact user wording, ignores assistant suggestions and ambiguous or conditional
+directives, and gives current instructions for the same scope precedence. Empty or
+partial model resolutions do not erase this evidence; an explicit model assessment
+of the same evidence takes precedence. Other task-specific decisions require the
+checker to assess applicability; when interrupted, review leaves unassessed choices
+visible for user editing.
 **Edit final prompt** opens Pi's editor and returns to review; editing removes any
 previous approval. Each draft generation or edit increments `prompt_revision`;
 approval records `approved_revision`, which must match before forwarding.

@@ -53,13 +53,14 @@ export interface CheckedRequest {
   confirmed_combination?: Recommendation[];
 }
 
-/** Conservative, synchronous fallback for an interrupted check. Only explicit response
- * language directives are carried over; task-specific applicability stays with the
- * checker. Keep the exact user wording as evidence, never infer from their language.
+/** Synchronous evidence snapshot for review, independent of any model result.
+ * Retain direct instructions and explicit decisions verbatim rather than guessing
+ * their values from a fixed vocabulary (e.g. a list of supported languages).
+ * Ambiguous, quoted and other-task statements remain unassessed.
  */
 export function conversationDecisions(conversation: ConversationMessage[], original_prompt: string): OptionResolution[] {
   const language = /(?:use)\s+(?:Korean|English|Japanese|Chinese|French|German|Spanish)(?=\s*[.!。]?$)|(?:answer|respond|reply|write|output)(?:\s+(?:to me|the answer|the response))?\s+in\s+([\p{L}-]+)|(?:use)\s+([\p{L}-]+)\s+(?:for (?:your|the|all) (?:final )?(?:answers?|responses?|replies)|when (?:answering|responding))|((?:한국어|영어|일본어|중국어)(?:로|으로))\s*(?:답변|응답|작성)|(?:답변|응답)(?:은|는|을)?\s*((?:한국어|영어|일본어|중국어)(?:로|으로))/giu;
-  let result: OptionResolution | undefined;
+  const decisions = new Map<string, OptionResolution>();
   for (const [index, message] of [...conversation, { role: "user" as const, text: original_prompt }].entries()) {
     if (message.role !== "user") continue;
     // Quoted examples, questions, alternatives and conditional/other-task rules
@@ -67,15 +68,23 @@ export function conversationDecisions(conversation: ConversationMessage[], origi
     for (const sentence of (message.text.match(/[^.!?\n。]+[.!?。]?/gu) ?? [])) {
       if (/[?？"“”「」`]|\b(?:if|unless|could|might|maybe|example|instead of|or|previous|other|earlier)\b|(?:라면|예시|이전|다른|할까|또는)/iu.test(sentence)) continue;
       const matches = [...sentence.matchAll(language)];
-      if (!matches.length) continue;
-      // Only direct instructions, not reports about a different task or person.
-      if (!/^\s*(?:for (?:this (?:task|request|conversation)|all (?:answers|responses)),?\s*)?(?:please\s+)?(?:always\s+)?(?:answer|respond|reply|write|output|use)\b|^\s*(?:앞으로\s*|항상\s*)?(?:한국어|영어|일본어|중국어|답변|응답)/iu.test(sentence)) continue;
-      const match = matches[matches.length - 1];
-      result = { id: "response_language", applies_to_request: true, confirmed: true,
-        value: match[0], evidence: { message_index: index === conversation.length ? -1 : index, quote: match[0] } };
+      const direct = /^\s*(?:for (?:this (?:task|request|conversation)|all (?:answers|responses)),?\s*)?(?:please\s+)?(?:always\s+)?(?:answer|respond|reply|write|output|use)\b|^\s*(?:앞으로\s*|항상\s*)?(?:한국어|영어|일본어|중국어|답변|응답)/iu.test(sentence);
+      const response = direct ? matches.at(-1)?.[0] : undefined;
+      // An explicit user instruction is already evidence of a decision. Preserve
+      // its wording, including its scope, without waiting for model classification.
+      // The target of "for ..." distinguishes independent instructions; newer
+      // instructions for the same target supersede older ones, including input.
+      const directive = sentence.match(/^\s*(?:for this (?:task|request|conversation),?\s*)?(?:please\s+)?(?:always\s+)?(?:(?:we(?:'ve| have)?|I(?:'ve| have)?)\s+(?:already\s+)?(?:decided|agreed|settled)\s+(?:to\s+|on\s+))?(use\s+.+?)\s*[.!。]?$/iu);
+      const value = response ?? directive?.[1];
+      if (!value) continue;
+      const scope = directive?.[1].match(/\s+for\s+(.+?)\s*$/iu)?.[1].toLowerCase();
+      const target = scope && !/^(?:this (?:task|request|project)|(?:the )?(?:implementation|code))$/u.test(scope) ? scope : "implementation";
+      const id = response ? "response_language" : `instruction:${target}`;
+      decisions.set(id, { id, applies_to_request: true, confirmed: true,
+        value, evidence: { message_index: index === conversation.length ? -1 : index, quote: value } });
     }
   }
-  return result ? [result] : [];
+  return [...decisions.values()];
 }
 
 /** Snapshot before awaiting the model, also usable when no model reply exists. */

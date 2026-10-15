@@ -86,9 +86,15 @@ export function applyClarificationActions(
 /** Local UI only: questions and answers never become Pi session messages. */
 export async function reviewClarification(ctx: ExtensionContext, request: CheckedRequest, startReview = false): Promise<string | undefined> {
   if (!ctx.hasUI) return undefined;
+  const assessed = request.check.option_resolutions ?? [];
+  const snapshot = conversationDecisions(request.check.conversation_context, request.check.original_prompt);
+  // An empty/partial model result must not erase already explicit user decisions.
+  // Prefer model applicability assessments when they address the same evidence.
+  const decisions = [...assessed, ...snapshot.filter(item => !assessed.some(other =>
+    other.id === item.id || (other.evidence.message_index === item.evidence.message_index
+      && (other.evidence.quote.includes(item.evidence.quote) || item.evidence.quote.includes(other.evidence.quote)))))];
   const state = new WasabiClarification(request.check.original_prompt,
-    (request.check.option_resolutions ?? conversationDecisions(request.check.conversation_context, request.check.original_prompt))
-      .filter(item => item.applies_to_request && item.confirmed)
+    decisions.filter(item => item.applies_to_request && item.confirmed)
       .map(item => `${item.id}: ${item.value}`));
   if (startReview) state.apply([{ type: "finish" }]);
   const options = request.check.missing_options;

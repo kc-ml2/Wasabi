@@ -275,3 +275,26 @@ test.each(["Use Korean.", "For this task, answer in Korean.", "Always respond in
   "direct language instructions survive interruption: %s", text => {
     expect(conversationDecisions([{ role: "user", text }], "Compare databases")[0].value).toContain("Korean");
   });
+
+test.each(["TypeScript", "Rust", "Kotlin", "Elixir"])(
+  "review snapshot preserves explicit implementation decisions without a language vocabulary: %s", value => {
+    const text = `We already decided to use ${value} for this task.`;
+    const [decision] = conversationDecisions([{ role: "user", text }], "Implement retry handling");
+    expect(decision).toMatchObject({ applies_to_request: true, confirmed: true,
+      value: `use ${value} for this task`, evidence: { message_index: 0, quote: `use ${value} for this task` } });
+    expect(text).toContain(decision.evidence.quote);
+  });
+
+test("new explicit implementation instructions replace prior decisions for the same scope", () => {
+  const decisions = conversationDecisions([{ role: "user", text: "Use TypeScript for implementation." }], "Use Kotlin for this task.");
+  expect(decisions).toHaveLength(1);
+  expect(decisions[0]).toMatchObject({ value: "Use Kotlin for this task", evidence: { message_index: -1 } });
+});
+
+test.each([
+  "Could we use Kotlin?", "Use Kotlin or Rust.", "If needed, use Kotlin.",
+  "For another project, use Kotlin.", "The previous task used Kotlin.",
+  'Example: "Use Kotlin".',
+])("snapshot leaves proposed or unrelated implementation choices unassessed: %s", text => {
+  expect(conversationDecisions([{ role: "user", text }], "Implement retry handling")).toEqual([]);
+});

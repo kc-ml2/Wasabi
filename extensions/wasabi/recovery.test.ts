@@ -314,3 +314,42 @@ test("finish before any model reply retains the captured language directive thro
   expect((invoke.mock.calls[0][2] as any).signal.aborted).toBe(true);
   expect(JSON.stringify(entries)).toBe(before);
 });
+
+test.each(["TypeScript", "Rust", "Kotlin", "Elixir"])(
+  "finish with no model response preserves %s, holds review for approval, and ignores late drafts", async language => {
+    jest.useFakeTimers();
+    let late!: (value: any) => void;
+    let approve!: (value: string) => void;
+    const invoke = jest.fn<any>(() => new Promise(resolve => { late = resolve; }));
+    const h = harness([], invoke);
+    const entries = [{ type: "message", message: { role: "user", content: `Use ${language} for this task.` } }];
+    h.ctx.sessionManager.getBranch = () => entries;
+    h.ctx.ui.editor = jest.fn<any>(async (_title: string, draft: string) => draft + "\nInclude tests.");
+    h.ctx.ui.select.mockResolvedValueOnce("Finish clarification and review prompt")
+      .mockResolvedValueOnce("Edit final prompt")
+      .mockImplementationOnce(() => new Promise(resolve => { approve = resolve; }));
+    await h.commands["wasabi-model"].handler("p/light", h.ctx);
+    const before = JSON.stringify(entries);
+    let sent = false;
+    const input = h.handlers.input({ source: "interactive", text: "Implement retry handling" }, h.ctx)
+      .then((result: any) => { sent = true; return result; });
+    await jest.advanceTimersByTimeAsync(200);
+    expect(sent).toBe(false);
+    expect(invoke).toHaveBeenCalledTimes(1);
+    expect((invoke.mock.calls[0][2] as any).signal.aborted).toBe(true);
+    const review = h.ctx.ui.select.mock.calls[2][0] as string;
+    expect(review).toContain(language);
+    expect(review).toContain("Include tests");
+    expect(review).toContain("Checking ended before options were assessed");
+    late(response);
+    await jest.advanceTimersByTimeAsync(0);
+    expect(sent).toBe(false);
+    expect(h.ctx.ui.select).toHaveBeenCalledTimes(3);
+    approve("Approve and send");
+    const result = await input;
+    expect(result.action).toBe("transform");
+    expect(result.text).toContain(language);
+    expect(result.text).toContain("Include tests");
+    expect(JSON.stringify(entries)).toBe(before);
+    expect(h.ctx.ui.setStatus).toHaveBeenLastCalledWith("wasabi", undefined);
+  });
