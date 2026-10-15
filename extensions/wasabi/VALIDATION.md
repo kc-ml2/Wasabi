@@ -1,5 +1,32 @@
 # Wasabi validation record
 
+## AC 6: automatic checking activation and explicit off preference
+
+Validated on 2026-10-15 with `npm run check`: TypeScript passed and all
+11 Jest suites / 220 tests passed, including 20 automation tests.
+No production change was needed for this criterion.
+
+Added five cases: first selection through ordinary input, `/wasabi on`, and
+`/wasabi-model`; explicit off after successful setup followed by pending model
+reselection, main-model changes, session resume and reactivation; and overlapping
+on/off/on commands sharing one pending chooser. No authentication or provider
+call occurs before first selection. Each first-use path enables later inputs;
+only the dedicated model is invoked. After setup, off prevents calls both during
+and after reselection and survives resume. Explicit on reactivates checking with
+the newly selected dedicated model without another chooser. A superseded on
+request cannot override off or the latest on request.
+
+Existing automation tests directly verify `enabled=false` and
+`activation_pending=true` before selection, successful first setup, dismissal,
+off before first selection and during each pending activation path, separate
+initial-setup tracking, and restoration of explicit preferences. Together these
+cover both configuration state and actual input/command behavior.
+
+These checks use mocked Pi contexts and providers. Live Pi UI, real-model calls
+and the independent acceptance harness were not executed by this worker.
+The pre-existing `.ouroboros/context_pack.json` modification is preserved and
+excluded from the commit.
+
 ## AC 5: dedicated model selection and main-model independence
 
 Validated on 2026-10-15 with `npm run check`: TypeScript passed and all

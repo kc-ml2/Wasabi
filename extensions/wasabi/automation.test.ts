@@ -203,6 +203,79 @@ function extensionHarness() {
   return { ...h, events, invoke, input, toggle, select, toggles };
 }
 
+test.each(["first input", "on command", "model command"])("first selection through %s enables subsequent automatic checking", async mode => {
+  const h = extensionHarness();
+  await h.events.session_start({}, h.ctx);
+  let choose!: (choice: string) => void;
+  h.ctx.ui.select.mockImplementation(() => new Promise(resolve => { choose = resolve; }));
+  const pending = mode === "first input" ? h.input()
+    : mode === "on command" ? h.toggle("on") : h.select("");
+  expect(h.toggles()).toEqual([]);
+  expect(h.invoke).not.toHaveBeenCalled();
+  expect(h.ctx.modelRegistry.getApiKeyAndHeaders).not.toHaveBeenCalled();
+  choose("p/light");
+  await pending;
+  expect(h.toggles()).toContain(true);
+  expect(h.toggles().every(enabled => enabled === true)).toBe(true);
+  expect(h.invoke).toHaveBeenCalledTimes(mode === "first input" ? 1 : 0);
+  await h.input();
+  expect(h.invoke).toHaveBeenCalledTimes(mode === "first input" ? 2 : 1);
+  for (const [model] of h.invoke.mock.calls) expect(model).toEqual({ provider: "p", id: "light" });
+  expect(h.ctx.ui.select).toHaveBeenCalledTimes(1);
+});
+
+test("off after completed setup survives pending reselection, main model changes and resume until on", async () => {
+  const h = extensionHarness();
+  await h.events.session_start({}, h.ctx);
+  await h.input();
+  expect(h.invoke).toHaveBeenCalledTimes(1);
+  await h.toggle("off");
+  h.invoke.mockClear();
+  h.ctx.modelRegistry.getApiKeyAndHeaders.mockClear();
+  let choose!: (choice: string) => void;
+  h.ctx.ui.select.mockImplementation(() => new Promise(resolve => { choose = resolve; }));
+  const pending = h.select("");
+  h.ctx.model = { provider: "main", id: "changed-during-selection" };
+  expect(await h.input()).toEqual({ action: "continue" });
+  expect(h.toggles()).toEqual([true, false]);
+  expect(h.invoke).not.toHaveBeenCalled();
+  choose("p/other");
+  await pending;
+  h.ctx.model = { provider: "main", id: "changed-after-selection" };
+  await h.events.session_start({ reason: "resume" }, h.ctx);
+  expect(await h.input()).toEqual({ action: "continue" });
+  expect(h.toggles()).toEqual([true, false]);
+  expect(h.invoke).not.toHaveBeenCalled();
+  expect(h.ctx.modelRegistry.getApiKeyAndHeaders).not.toHaveBeenCalled();
+  await h.toggle("on");
+  await h.input();
+  expect(h.toggles()).toEqual([true, false, true]);
+  expect(h.invoke).toHaveBeenCalledTimes(1);
+  expect(h.invoke.mock.calls[0][0]).toEqual({ provider: "p", id: "other" });
+  expect(h.ctx.ui.select).toHaveBeenCalledTimes(2);
+});
+
+test("latest on request can share a chooser invalidated by off without reviving an older activation", async () => {
+  const h = harness();
+  let choose!: (choice: string) => void;
+  h.ctx.ui.select.mockImplementation(() => new Promise(resolve => { choose = resolve; }));
+  const obsolete = h.automation.setEnabled(h.ctx, true);
+  await h.automation.setEnabled(h.ctx, false);
+  expect(h.automation.activation_pending).toBe(false);
+  const current = h.automation.setEnabled(h.ctx, true);
+  expect(h.automation.activation_pending).toBe(true);
+  expect(h.automation.enabled).toBe(false);
+  choose("p/light");
+  expect(await obsolete).toBe(false);
+  expect(await current).toBe(true);
+  expect(h.automation.activation_pending).toBe(false);
+  expect(h.automation.initial_setup_completed).toBe(true);
+  expect(h.automation.enabled).toBe(true);
+  expect(h.entries.filter(entry => entry.customType === AUTOMATION_ENTRY_TYPE)
+    .map(entry => entry.data.enabled)).toEqual([false, true]);
+  expect(h.ctx.ui.select).toHaveBeenCalledTimes(1);
+});
+
 test.each(["first input", "on command"])("off invalidates pending activation from %s at the extension boundary", async mode => {
   const h = extensionHarness();
   await h.events.session_start({}, h.ctx);
