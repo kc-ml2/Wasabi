@@ -1,5 +1,23 @@
 # Wasabi validation record
 
+## AC 3: interaction indicator lifetime
+
+Validated on 2026-10-15 with `npm run check`: TypeScript passed and all
+11 Jest suites / 201 tests passed. `git diff --check` passed.
+
+The indicator integration tests observe `select_model`, `checking`,
+`clarifying`, `reviewing`, `recovering`, and `forwarding`. Added two complete
+first-use flows through a failed check, recovery, retry, clarification and
+review, ending in approval or cancellation. Assertions at actual request and
+clarification state transitions verify that the Wasabi status remains visible,
+including during forwarding and cancellation cleanup. The final status clear
+occurs only when the input handler returns to the main session.
+
+Existing tests also cover review editing, recovery send-original, timeout,
+stop-waiting, early finish, dismissed dialogs, overlapping model selection and
+session reset. No production change was needed for this criterion. These are
+mocked Pi/provider checks; live Pi UI was not manually exercised.
+
 ## AC 2: early finish and current-draft approval
 
 Validated on 2026-10-15 with `npm run check`: TypeScript passed and all

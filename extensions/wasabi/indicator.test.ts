@@ -1,6 +1,7 @@
 import { jest } from "@jest/globals";
 import wasabi from "./index.ts";
 import { CALL_TIMEOUT_MS, WasabiRequest } from "./recovery.ts";
+import { WasabiClarification } from "./clarification.ts";
 
 const active = "Wasabi · Private clarification · Main session paused";
 const selecting = "Wasabi · Selecting dedicated model · Main session paused";
@@ -245,3 +246,71 @@ test("disabled and headless inputs do not install a UI indicator", async () => {
   expect((await h.input()).action).toBe("handled");
   expect(h.ctx.ui.setStatus).not.toHaveBeenCalled();
 });
+
+test.each(["Approve and send", "Cancel request"])(
+  "state entry stays identified across recovery and retry until %s completes", async terminal => {
+    const h = harness(["p/light", "Retry", "Finish clarification and review prompt", terminal]);
+    const observed: string[] = [];
+    let request: WasabiRequest | undefined;
+    const call = WasabiRequest.prototype.call;
+    const apply = WasabiClarification.prototype.apply;
+    const forward = WasabiRequest.prototype.forward;
+    const cancel = WasabiRequest.prototype.cancel;
+    const spies = [
+      jest.spyOn(WasabiRequest.prototype, "call").mockImplementation(function (this: WasabiRequest, ...args) {
+        request = this;
+        const pending = call.apply(this, args);
+        expect(this.interaction_state).toBe("checking");
+        expect(h.status()).toBe(active);
+        observed.push(this.interaction_state);
+        return pending;
+      }),
+      jest.spyOn(WasabiClarification.prototype, "apply").mockImplementation(function (this: WasabiClarification, actions) {
+        const value = apply.call(this, actions);
+        expect(h.status()).toBe(active);
+        if (this.interaction_state === "reviewing") observed.push(this.interaction_state);
+        return value;
+      }),
+      jest.spyOn(WasabiRequest.prototype, "forward").mockImplementation(function (this: WasabiRequest, text) {
+        const value = forward.call(this, text);
+        expect(this.interaction_state).toBe("forwarding");
+        expect(h.status()).toBe(active);
+        observed.push(this.interaction_state);
+        return value;
+      }),
+      jest.spyOn(WasabiRequest.prototype, "cancel").mockImplementation(function (this: WasabiRequest) {
+        cancel.call(this);
+        expect(this.interaction_state).toBe("cancelled");
+        expect(this.active_call).toBeNull();
+        expect(h.status()).toBe(active);
+        observed.push(this.interaction_state);
+      }),
+    ];
+    const select = h.ctx.ui.select.getMockImplementation()!;
+    h.ctx.ui.select.mockImplementation(async (...args: any[]) => {
+      const title = args[0] as string;
+      if (title.includes("Choose a lightweight model")) observed.push("select_model");
+      if (title.includes("Recovery")) {
+        expect(request?.interaction_state).toBe("recovering");
+        observed.push("recovering");
+      }
+      if (title.includes("Clarification")) {
+        expect(request?.interaction_state).toBe("clarifying");
+        observed.push("clarifying");
+      }
+      return select(...args);
+    });
+    h.invoke.mockRejectedValueOnce(new Error("Temporarily unavailable"));
+    try {
+      expect((await h.input()).action).toBe(terminal === "Approve and send" ? "transform" : "handled");
+      expect(observed).toEqual([
+        "select_model", "checking", "recovering", "checking", "clarifying", "reviewing",
+        terminal === "Approve and send" ? "forwarding" : "cancelled",
+      ]);
+      expect(h.ctx.ui.setStatus.mock.calls).toEqual([
+        ["wasabi", active], ["wasabi", selecting], ["wasabi", active], ["wasabi", undefined],
+      ]);
+      expect(h.status()).toBeUndefined();
+    } finally { spies.forEach(spy => spy.mockRestore()); }
+  },
+);
