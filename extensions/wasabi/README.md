@@ -111,7 +111,9 @@ identify Wasabi.
 
 ## Interrupted calls and recovery
 
-Each checker call has a 30-second timeout. For calls lasting over 200ms, a waiting
+Each checker call has a 30-second timeout. Responses must also arrive before the
+recorded deadline, even if a busy event loop delays the timeout callback.
+For calls lasting over 200ms, a waiting
 selection offers **Stop waiting** (Esc also stops) and **Finish clarification and
 review prompt**. Finishing opens review immediately with the original request,
 without another model call or unconfirmed suggestions. Settling or invalidating

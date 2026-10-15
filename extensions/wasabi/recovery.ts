@@ -109,6 +109,12 @@ export class WasabiRequest {
       const run = async () => work(call.controller.signal);
       const value = await Promise.race([run(), interrupted]);
       if (!current() || call.controller.signal.aborted) throw new Error("Wasabi call invalidated.");
+      // A busy event loop may let a provider's microtask run before the timeout
+      // callback. The recorded deadline, not timer callback order, bounds authority.
+      if (Date.now() >= call.deadline) {
+        failureKind = "timeout";
+        throw new Error("Wasabi call timed out; waiting stopped.");
+      }
       this.invalidate();
       this.interaction_state = "clarifying";
       return value;

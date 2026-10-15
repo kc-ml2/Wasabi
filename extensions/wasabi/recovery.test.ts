@@ -353,3 +353,73 @@ test.each(["TypeScript", "Rust", "Kotlin", "Elixir"])(
     expect(JSON.stringify(entries)).toBe(before);
     expect(h.ctx.ui.setStatus).toHaveBeenLastCalledWith("wasabi", undefined);
   });
+
+test.each(["checking", "clarifying"] as const)(
+  "%s rejects a response past its deadline even before the timeout callback runs", async kind => {
+    jest.useFakeTimers();
+    const state = new WasabiRequest("Original");
+    let resolve!: (value: string) => void;
+    const pending = state.call(quiet, () => new Promise<string>(done => { resolve = done; }), 50, kind);
+    const active = state.active_call!;
+    // Move the wall clock without running timers, as when the event loop is busy.
+    jest.setSystemTime(active.deadline);
+    resolve("Too late");
+    await expect(pending).rejects.toThrow("timed out");
+    expect(active.controller.signal.aborted).toBe(true);
+    expect(state.active_call).toBeNull();
+    expect(state.call_generation).toBeGreaterThan(active.call_generation);
+    expect(state.failure).toMatchObject({ kind: "timeout", request_id: state.request_id,
+      call_generation: active.call_generation });
+    expect(state.interaction_state).toBe("recovering");
+    expect(state.original_prompt).toBe("Original");
+  });
+
+for (const kind of ["timeout", "interrupted"] as const) {
+  for (const settlement of ["resolve", "reject"] as const) {
+    test.each(["Retry", "Send original unchanged", "Cancel request"])(
+      `${kind}: obsolete ${settlement} cannot change held recovery or its %s decision`, async action => {
+        jest.useFakeTimers();
+        let resolve!: (value: any) => void;
+        let reject!: (error: Error) => void;
+        let recover!: (value: string) => void;
+        const invoke = jest.fn<any>().mockImplementationOnce(() => new Promise((done, fail) => {
+          resolve = done;
+          reject = fail;
+        })).mockResolvedValue(response);
+        const h = harness([], invoke);
+        h.ctx.ui.select.mockImplementationOnce((_title: string, _items: string[], opts: any) =>
+          kind === "interrupted" ? Promise.resolve("Stop waiting") : new Promise(done => {
+            opts.signal.addEventListener("abort", () => done(undefined));
+          }))
+          .mockImplementationOnce(() => new Promise(done => { recover = done; }));
+        await h.commands["wasabi-model"].handler("p/light", h.ctx);
+        let returned = false;
+        const pending = h.handlers.input({ source: "interactive", text: "Preserve exactly" }, h.ctx)
+          .then((result: any) => { returned = true; return result; });
+        await jest.advanceTimersByTimeAsync(kind === "timeout" ? CALL_TIMEOUT_MS : 200);
+        expect(returned).toBe(false);
+        expect(invoke).toHaveBeenCalledTimes(1);
+        expect((invoke.mock.calls[0][2] as any).signal.aborted).toBe(true);
+        const recovery = h.ctx.ui.select.mock.calls[1];
+        expect(recovery[0]).toContain("Recovery");
+        expect(recovery[0]).toContain("Preserve exactly");
+        expect(recovery[1]).toEqual(["Retry", "Send original unchanged", "Cancel request"]);
+        if (settlement === "resolve") resolve(response);
+        else reject(new Error("Obsolete provider failure"));
+        await jest.advanceTimersByTimeAsync(0);
+        expect(returned).toBe(false);
+        expect(h.ctx.ui.select).toHaveBeenCalledTimes(2);
+        expect(invoke).toHaveBeenCalledTimes(1);
+        recover(action);
+        expect(await pending).toEqual(action === "Retry" ? { action: "continue" }
+          : action === "Cancel request" ? { action: "handled" }
+            : { action: "transform", text: "Preserve exactly", images: undefined });
+        expect(invoke).toHaveBeenCalledTimes(action === "Retry" ? 2 : 1);
+        expect(h.ctx.ui.setStatus).toHaveBeenLastCalledWith("wasabi", undefined);
+        // Subsequent input has its own authority and cannot resurrect the old request.
+        expect(await h.handlers.input({ source: "interactive", text: "Next request" }, h.ctx))
+          .toEqual({ action: "continue" });
+        expect(h.ctx.ui.select).toHaveBeenCalledTimes(2);
+      });
+  }
+}
