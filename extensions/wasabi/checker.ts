@@ -146,6 +146,22 @@ Recommend exactly one listed choice for every missing option, as a coherent comb
 Recommendations are proposals requiring explicit user confirmation, never user decisions.
 If nothing remains undecided, return missing_options and recommended_combination empty, retaining applicable resolutions. Match the user's language.`;
 
+export class WasabiResponseFormatError extends Error {
+  constructor(message = "Wasabi received invalid JSON from the checking model. Retry the check or send the original request unchanged.") {
+    super(message);
+    this.name = "WasabiResponseFormatError";
+  }
+}
+
+function readResponseJson(raw: string): unknown {
+  const trimmed = raw.trim();
+  // Some models wrap an otherwise complete JSON object in a Markdown code block.
+  // Accept that wrapper only; never guess missing punctuation or partial values.
+  const fenced = trimmed.match(/^```(?:json)?\s*\n([\s\S]*?)\n```$/iu);
+  try { return JSON.parse(fenced ? fenced[1] : trimmed); }
+  catch { throw new WasabiResponseFormatError(); }
+}
+
 function record(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("Invalid Wasabi response.");
   return value as Record<string, unknown>;
@@ -166,7 +182,7 @@ function evidence(value: unknown, conversation: ConversationMessage[], original_
 
 export function parseCheckResponse(raw: string, conversation: ConversationMessage[], original_prompt?: string): Pick<CheckResult,
   "missing_options" | "recommended_combination" | "option_resolutions"> {
-  const result = record(JSON.parse(raw));
+  const result = record(readResponseJson(raw));
   if (!Array.isArray(result.missing_options) || !Array.isArray(result.recommended_combination)) {
     throw new Error("Missing Wasabi options or recommendations.");
   }
@@ -243,21 +259,37 @@ export class WasabiChecker {
     const sources = [conversationSource];
     const conversation_context = sources.flatMap(source => source.read(ctx));
     const information_sources = sources.map(source => source.name);
-    const response = await this.model.complete(ctx, {
-      systemPrompt: CHECK_SYSTEM_PROMPT,
-      messages: [{ role: "user", content: JSON.stringify({ original_prompt, conversation_context, information_sources }),
-        timestamp: Date.now() }],
-    }, { signal });
-    if (signal?.aborted) throw new Error("Wasabi call invalidated.");
-    if (response.stopReason === "error" || response.stopReason === "aborted") {
-      throw new Error(response.errorMessage || "Wasabi checking failed.");
+    let retryFormat = false;
+    while (true) {
+      if (signal?.aborted) throw new Error("Wasabi call invalidated.");
+      const response = await this.model.complete(ctx, {
+        systemPrompt: CHECK_SYSTEM_PROMPT + (retryFormat
+          ? "\nYour previous response was not complete valid JSON. Generate the check again from the input. Return one complete JSON object only, with correctly escaped strings, commas and closed arrays. Keep evidence quotes short and exact. Do not include Markdown or commentary."
+          : ""),
+        messages: [{ role: "user", content: JSON.stringify({ original_prompt, conversation_context, information_sources }),
+          timestamp: Date.now() }],
+      }, { signal });
+      if (signal?.aborted) throw new Error("Wasabi call invalidated.");
+      if (response.stopReason === "error" || response.stopReason === "aborted") {
+        throw new Error(response.errorMessage || "Wasabi checking failed.");
+      }
+      try {
+        if (response.stopReason === "length") {
+          throw new WasabiResponseFormatError("Wasabi's checking response was cut off before completion. Retry the check or choose another Wasabi model.");
+        }
+        const raw = response.content.filter(part => part.type === "text").map(part => part.text).join("\n");
+        const check = { original_prompt, conversation_context, information_sources,
+          ...parseCheckResponse(raw, conversation_context, original_prompt) };
+        const request: CheckedRequest = { check };
+        this.pending = request;
+        return request;
+      } catch (error) {
+        if (!(error instanceof WasabiResponseFormatError) || retryFormat) throw error;
+        // One private regeneration shares the request's existing timeout and
+        // cancellation signal. Never silently forward an unchecked prompt.
+        retryFormat = true;
+      }
     }
-    const raw = response.content.filter(part => part.type === "text").map(part => part.text).join("\n");
-    const check = { original_prompt, conversation_context, information_sources,
-      ...parseCheckResponse(raw, conversation_context, original_prompt) };
-    const request: CheckedRequest = { check };
-    this.pending = request;
-    return request;
   }
 
   async confirmRecommendations(ctx: ExtensionContext, request: CheckedRequest): Promise<void> {

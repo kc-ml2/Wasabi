@@ -1,6 +1,7 @@
 import { jest } from "@jest/globals";
 import wasabi from "./index.ts";
-import { CHECK_SYSTEM_PROMPT, conversationDecisions, conversationSource, parseCheckResponse, WasabiChecker } from "./checker.ts";
+import { CHECK_SYSTEM_PROMPT, conversationDecisions, conversationSource, parseCheckResponse, WasabiChecker, WasabiResponseFormatError } from "./checker.ts";
+import { WasabiRequest } from "./recovery.ts";
 
 const conversation = [
   { role: "user" as const, text: "For research, compare SQLite and Postgres. Cover performance or deployment." },
@@ -52,6 +53,116 @@ function harness(result: unknown = missing()) {
   };
   return { checker, ctx, complete, entries, pi, events, commands };
 }
+
+test("complete fenced JSON is accepted with the same evidence validation", () => {
+  expect(parseCheckResponse(`\n\x60\x60\x60json\n${JSON.stringify(missing())}\n\x60\x60\x60\n`, conversation)).toEqual(missing());
+  const invented = missing();
+  invented.missing_options[0].evidence.quote = "invented";
+  expect(() => parseCheckResponse(`\x60\x60\x60json\n${JSON.stringify(invented)}\n\x60\x60\x60`, conversation)).toThrow("not in the conversation");
+  expect(() => parseCheckResponse(`Commentary ${JSON.stringify(clear)}`, [])).toThrow(WasabiResponseFormatError);
+});
+
+test("a malformed array response is regenerated once using the same input and cancellation signal", async () => {
+  const h = harness();
+  const signal = new AbortController().signal;
+  h.complete.mockResolvedValueOnce({ stopReason: "stop", content: [{ type: "text",
+    text: '{"missing_options":[{"id":"scope"} {"id":"format"}],"recommended_combination":[]}' }] });
+  const before = [...h.entries];
+  const result = await h.checker.check(h.ctx, "Compare them", signal);
+  expect(result.check.missing_options).toEqual(missing().missing_options);
+  expect(h.complete).toHaveBeenCalledTimes(2);
+  const first = h.complete.mock.calls[0];
+  const retry = h.complete.mock.calls[1];
+  expect((retry[1] as any).messages[0].content).toEqual((first[1] as any).messages[0].content);
+  expect((retry[1] as any).systemPrompt).toContain("previous response was not complete valid JSON");
+  expect(first[2]).toEqual({ signal });
+  expect(retry[2]).toEqual({ signal });
+  expect(h.entries).toEqual(before);
+  expect(h.pi.sendUserMessage).not.toHaveBeenCalled();
+});
+
+test("repeated malformed responses produce an actionable error without an unbounded retry", async () => {
+  const h = harness();
+  h.complete.mockResolvedValue({ stopReason: "stop", content: [{ type: "text", text: '{"missing_options":[' }] });
+  await expect(h.checker.check(h.ctx, "Compare them")).rejects.toThrow("invalid JSON from the checking model");
+  expect(h.complete).toHaveBeenCalledTimes(2);
+  expect(h.checker.pending).toBeUndefined();
+});
+
+test("format failure recovery preserves the original input and never forwards it implicitly", async () => {
+  const h = harness();
+  wasabi(h.pi, h.complete);
+  await h.commands["wasabi-model"].handler("p/light", h.ctx);
+  const before = [...h.entries];
+  h.complete.mockResolvedValue({ stopReason: "stop", content: [{ type: "text", text: '{"missing_options":[' }] });
+  h.ctx.ui.select.mockResolvedValue("Cancel request");
+  expect(await h.events.input({ source: "interactive", text: "Keep this original draft" }, h.ctx))
+    .toEqual({ action: "handled" });
+  expect(h.complete).toHaveBeenCalledTimes(2);
+  const [title, actions] = h.ctx.ui.select.mock.calls[0];
+  expect(title).toContain("Wasabi · Recovery");
+  expect(title).toContain("invalid JSON from the checking model");
+  expect(title).toContain("Original request:\nKeep this original draft");
+  expect(actions).toEqual(["Retry", "Send original unchanged", "Cancel request"]);
+  expect(h.entries).toEqual(before);
+  expect(h.pi.sendUserMessage).not.toHaveBeenCalled();
+  expect(h.pi.sendMessage).not.toHaveBeenCalled();
+});
+
+test("truncated output is regenerated even if its text happens to parse", async () => {
+  const h = harness(clear);
+  h.complete.mockResolvedValueOnce({ stopReason: "length", content: [{ type: "text", text: JSON.stringify(clear) }] });
+  await expect(h.checker.check(h.ctx, "Compare them")).resolves.toMatchObject({ check: clear });
+  expect(h.complete).toHaveBeenCalledTimes(2);
+});
+
+test("regeneration does not bypass evidence checks or retry provider failures", async () => {
+  const h = harness();
+  h.complete.mockResolvedValueOnce({ stopReason: "stop", content: [{ type: "text", text: "invalid JSON" }] });
+  const invented = missing();
+  invented.missing_options[0].evidence.quote = "invented";
+  h.complete.mockResolvedValueOnce({ stopReason: "stop", content: [{ type: "text", text: JSON.stringify(invented) }] });
+  await expect(h.checker.check(h.ctx, "Compare them")).rejects.toThrow("not in the conversation");
+  expect(h.complete).toHaveBeenCalledTimes(2);
+  h.complete.mockClear().mockResolvedValue({ stopReason: "error", errorMessage: "provider offline", content: [] });
+  await expect(h.checker.check(h.ctx, "Compare them")).rejects.toThrow("provider offline");
+  expect(h.complete).toHaveBeenCalledTimes(1);
+});
+
+test("an aborted malformed response cannot launch regeneration", async () => {
+  const h = harness();
+  const controller = new AbortController();
+  h.complete.mockImplementation(async () => {
+    controller.abort();
+    return { stopReason: "stop", content: [{ type: "text", text: "invalid JSON" }] };
+  });
+  await expect(h.checker.check(h.ctx, "Compare them", controller.signal)).rejects.toThrow("invalidated");
+  expect(h.complete).toHaveBeenCalledTimes(1);
+});
+
+test("automatic regeneration shares the call deadline and cannot publish a late result", async () => {
+  jest.useFakeTimers();
+  try {
+    const h = harness(clear);
+    h.ctx.hasUI = false;
+    const state = new WasabiRequest("Compare them");
+    let resolveRetry!: (result: any) => void;
+    let started!: () => void;
+    const retryStarted = new Promise<void>(resolve => { started = resolve; });
+    h.complete.mockResolvedValueOnce({ stopReason: "stop", content: [{ type: "text", text: "invalid JSON" }] })
+      .mockImplementationOnce(() => new Promise(resolve => { resolveRetry = resolve; started(); }));
+    const pending = state.call(h.ctx, signal => h.checker.check(h.ctx, state.original_prompt, signal), 1000);
+    const rejected = expect(pending).rejects.toThrow("waiting stopped");
+    await retryStarted;
+    await jest.advanceTimersByTimeAsync(1000);
+    await rejected;
+    resolveRetry({ stopReason: "stop", content: [{ type: "text", text: JSON.stringify(clear) }] });
+    await jest.advanceTimersByTimeAsync(0);
+    expect(h.checker.pending).toBeUndefined();
+    expect(state.forwarded).toBe(false);
+    expect(h.complete).toHaveBeenCalledTimes(2);
+  } finally { jest.useRealTimers(); }
+});
 
 test("checker reads only branch conversation text, retaining roles and an extensible source boundary", async () => {
   const h = harness();

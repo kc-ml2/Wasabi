@@ -127,6 +127,12 @@ without another model call or unconfirmed suggestions. Settling or invalidating
 the call closes the waiting dialog.
 Timeouts, interruption, invalid responses, and provider errors show the preserved
 original request with **Retry**, **Send original unchanged**, and **Cancel request**.
+If the checking model returns malformed or truncated JSON, Wasabi privately asks
+it to regenerate once within the same 30-second deadline. Complete JSON wrapped
+in a Markdown code block is accepted; incomplete data is never guessed or used.
+If regeneration also fails, recovery explains the response-format problem rather
+than showing a raw JSON parser exception. Evidence and recommendation validation
+still apply to every accepted response.
 Retry retains the same request identity. Sending the original is an explicit
 approval; cancellation sends nothing. Without UI, a failure reports the original
 and holds the input.
