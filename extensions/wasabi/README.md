@@ -3,6 +3,10 @@
 Use `/wasabi-model` to choose a lightweight model from Pi's authenticated models,
 or `/wasabi-model provider/model-id` to select one explicitly. The user decides
 which model is lightweight; no model IDs or performance thresholds are imposed.
+The interactive chooser shows at most ten models (fewer in a short terminal).
+Type to fuzzy-search provider, model ID, or display name, use Up/Down to scroll,
+Enter to select, and Esc to cancel, as in Pi's `/model` chooser. RPC clients use
+their standard selection dialog.
 
 The first ordinary input asks for this selection and enables automatic checking
 after a successful choice. Cancelling selection leaves checking disabled. Use

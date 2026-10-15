@@ -1,6 +1,7 @@
 import { complete } from "@earendil-works/pi-ai/compat";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { WasabiIndicator } from "./indicator.ts";
+import { selectWasabiModel } from "./model-selector.ts";
 
 export const MODEL_ENTRY_TYPE = "wasabi-model";
 
@@ -65,9 +66,7 @@ export class WasabiModel {
       const leave = this.indicator.enter(ctx, "Wasabi · Selecting dedicated model · Main session paused");
       this.leaveSelection = leave;
       try {
-        choice = await ctx.ui.select(
-          "Wasabi · Choose a lightweight model for checking and clarification", keys,
-        );
+        choice = await selectWasabiModel(ctx, this.key);
       } finally {
         leave();
         if (this.leaveSelection === leave) this.leaveSelection = undefined;
