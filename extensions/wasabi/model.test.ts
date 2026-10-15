@@ -45,6 +45,74 @@ function extensionHarness() {
   return { ...h, events, commands, response };
 }
 
+test.each(["interactive", "rpc"])("%s input waits for on-command model selection before checking", async source => {
+  const h = extensionHarness();
+  let choose!: (choice: string) => void;
+  h.select.mockImplementation(() => new Promise(resolve => { choose = resolve; }));
+  const enabling = h.commands.wasabi.handler("on", h.ctx);
+  let returned = false;
+  const input = h.events.input({ source, text: "Research the alternatives" }, h.ctx)
+    .then((result: any) => { returned = true; return result; });
+  await Promise.resolve();
+  expect(returned).toBe(false);
+  expect(h.select).toHaveBeenCalledTimes(1);
+  expect(h.invoke).not.toHaveBeenCalled();
+  expect(h.ctx.modelRegistry.getApiKeyAndHeaders).not.toHaveBeenCalled();
+  expect(h.pi.appendEntry).not.toHaveBeenCalled();
+  h.ctx.model = { provider: "other", id: "changed-before-first-selection" };
+  choose("provider/user-chosen-model");
+  await enabling;
+  expect(await input).toEqual({ action: "continue" });
+  await h.events.input({ source, text: "Implement the result" }, h.ctx);
+  expect(h.invoke.mock.calls.map(call => call[0])).toEqual([h.dedicated, h.dedicated]);
+  expect(h.ctx.modelRegistry.getApiKeyAndHeaders.mock.calls.map((call: any[]) => call[0]))
+    .toEqual([h.dedicated, h.dedicated]);
+  expect(h.select).toHaveBeenCalledTimes(1);
+});
+
+test.each(["interactive", "rpc"])("dismissed first %s chooser makes no checker call and leaves selection for later input", async source => {
+  const h = extensionHarness();
+  h.select.mockResolvedValueOnce(undefined);
+  expect(await h.events.input({ source, text: "Research the alternatives" }, h.ctx))
+    .toEqual({ action: "continue" });
+  expect(h.invoke).not.toHaveBeenCalled();
+  expect(h.ctx.modelRegistry.getApiKeyAndHeaders).not.toHaveBeenCalled();
+  expect(h.pi.appendEntry).not.toHaveBeenCalled();
+  h.ctx.model = { provider: "other", id: "changed-after-dismissal" };
+  expect(await h.events.input({ source, text: "Try another request" }, h.ctx))
+    .toEqual({ action: "continue" });
+  expect(h.select).toHaveBeenCalledTimes(2);
+  expect(h.invoke).toHaveBeenCalledTimes(1);
+  expect(h.invoke.mock.calls[0][0]).toBe(h.dedicated);
+});
+
+test.each(["unavailable", "authentication"])("%s dedicated model enters recovery and retries without main-model fallback", async failure => {
+  const h = extensionHarness();
+  await h.commands["wasabi-model"].handler("provider/user-chosen-model", h.ctx);
+  if (failure === "unavailable") h.ctx.modelRegistry.getAvailable.mockReturnValue([h.main]);
+  else h.ctx.modelRegistry.getApiKeyAndHeaders.mockResolvedValue({ ok: false });
+  h.ctx.model = h.main;
+  h.select.mockImplementation(async (title: string, choices: string[]) => {
+    expect(title).toContain("Wasabi · Recovery");
+    expect(title).toContain("Original request:\nResearch the alternatives");
+    expect(choices).toEqual(["Retry", "Send original unchanged", "Cancel request"]);
+    expect(h.invoke).not.toHaveBeenCalled();
+    expect(h.entries.filter(entry => entry.customType === MODEL_ENTRY_TYPE)).toHaveLength(1);
+    h.ctx.model = { provider: "other", id: "changed-during-recovery" };
+    h.ctx.modelRegistry.getAvailable.mockReturnValue([h.main, h.dedicated]);
+    h.ctx.modelRegistry.getApiKeyAndHeaders.mockResolvedValue({ ok: true, apiKey: "recovered-key" });
+    return "Retry";
+  });
+  expect(await h.events.input({ source: "interactive", text: "Research the alternatives" }, h.ctx))
+    .toEqual({ action: "continue" });
+  expect(h.select).toHaveBeenCalledTimes(1);
+  expect(h.invoke).toHaveBeenCalledTimes(1);
+  expect(h.invoke).toHaveBeenCalledWith(h.dedicated, expect.anything(),
+    expect.objectContaining({ apiKey: "recovered-key" }));
+  expect(h.ctx.modelRegistry.getApiKeyAndHeaders.mock.calls.map((call: any[]) => call[0]))
+    .toEqual(failure === "authentication" ? [h.dedicated, h.dedicated] : [h.dedicated]);
+});
+
 test.each(["interactive", "rpc"])("%s input shares a pending model command without using the main model", async source => {
   const h = extensionHarness();
   let choose!: (choice: string) => void;

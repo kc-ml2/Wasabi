@@ -1,5 +1,31 @@
 # Wasabi validation record
 
+## AC 5: dedicated model selection and main-model independence
+
+Validated on 2026-10-15 with `npm run check`: TypeScript passed and all
+11 Jest suites / 215 tests passed. The focused model suite passed all 20 tests.
+`git diff --check` passed. No production change was needed for this criterion.
+
+Added six integration cases covering interactive and RPC inputs held by a
+pending `/wasabi on` model chooser, dismissed first-use selection followed by
+another input, and recovery from unavailable-model or authentication failures.
+While selection is pending, neither authentication nor provider invocation nor
+configuration persistence occurs. After selection, held and subsequent inputs
+use the dedicated model despite a main-model change. Dismissal makes no checker
+call and leaves the next input to request selection again. Model failures open
+recovery without a fallback invocation; retry after changing the main model still
+authenticates and invokes only the originally selected dedicated model.
+
+Existing tests cover a pending model command, direct first-use inputs, private
+clarification and session resume across main-model changes, direct checking and
+clarification calls, stale selection after session replacement, headless setup,
+and explicit off preferences. Any authenticated model can be selected, including
+a different provider; no model-name, speed, size or benchmark heuristic is used.
+These checks use mocked Pi contexts and providers. Live Pi UI and real-model
+calls were not exercised; the independent acceptance harness was not run here.
+The pre-existing `.ouroboros/context_pack.json` modification is preserved and
+excluded from the commit.
+
 ## AC 4: cancellation authority and overlapping retries
 
 Validated on 2026-10-15 with `npm run check`: TypeScript passed and all
