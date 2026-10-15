@@ -1,5 +1,5 @@
 import { jest } from "@jest/globals";
-import crunchExtension from "../extensions/crunch.ts";
+import crunchExtension from "./index.ts";
 
 export function createHarness(source = "builtin") {
   const events: Record<string, (event: any, ctx: any) => any> = {};

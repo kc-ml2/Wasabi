@@ -1,6 +1,6 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 
-import { liteLLMSessionHeaders } from "../src/litellm-session.ts";
+import { liteLLMSessionHeaders } from "../../src/litellm-session.ts";
 
 export default function litellmSession(pi: ExtensionAPI) {
   pi.on("before_provider_headers", (event, ctx) => {

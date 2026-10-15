@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { afterEach, beforeEach, test } from "@jest/globals";
 import { initTheme } from "@earendil-works/pi-coding-agent";
 import { visibleWidth } from "@earendil-works/pi-tui";
-import { previewEdit, selectDiffExcerpt } from "../src/crunch-diff.ts";
+import { previewEdit, selectDiffExcerpt } from "./crunch-diff.ts";
 import { createHarness } from "./crunch-harness.ts";
 
 const theme: any = {

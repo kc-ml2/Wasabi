@@ -47,7 +47,8 @@ under `extensions/wasabi/`. The root manifest registers its entry point
 individually, and the root README links to its usage documentation. Jest discovers
 colocated tests and TypeScript includes the extension directory. Updated the stale
 test-discovery sentence in CONTRIBUTING.md to match those configurations.
-Existing flat extensions were not reorganized as part of this focused repair.
+At that revision, existing flat extensions were not reorganized. The retry below
+addresses the subsequent layout counterexample.
 
 ## Checks not executed
 
@@ -63,3 +64,39 @@ are not counted as passed. The tests use mocked Pi contexts and provider replies
 
 The pre-existing `.ouroboros/context_pack.json` modification is intentionally
 left uncommitted and unchanged by this task.
+
+## AC 7 retry: registered sub-extension layout
+
+The frozen check package subsequently reported `r7_package_validation`:
+`Expected: Every registered sub-extension uses extensions/<name>/index.ts`;
+`Observed: ./extensions/litellm-session.ts`. Reproduced locally before editing
+with the following command (exit 1 at the same manifest entry):
+
+```sh
+node --input-type=module -e 'import assert from "node:assert/strict"; import fs from "node:fs"; const p=JSON.parse(fs.readFileSync("package.json","utf8")); for (const entry of p.pi.extensions) assert.match(entry, /^\.\/extensions\/[^/]+\/index\.ts$/, `Invalid registered sub-extension: ${entry}`);'
+```
+
+Moved LiteLLM, Crop and Crunch into their respective sub-extension directories,
+including behavioral tests, Crunch's diff implementation and test harness, and
+per-extension usage documentation. Updated manifest entries and imports. The root
+README links to each extension's documentation. The pure LiteLLM header policy
+remains shared in `src/litellm-session.ts`, used by both LiteLLM and Crunch; its
+boundary is documented in both extensions. Existing Jest and TypeScript glob
+patterns already cover the migrated files and needed no configuration changes.
+
+Executed after this repair on 2026-10-15, Node v25.8.1:
+
+| Check | Result |
+| --- | --- |
+| Same manifest layout reproduction command | Exit 0 for all four entries |
+| Native imports of all registered entry points | Exit 0 |
+| `npm run check` | Exit 0; TypeScript passed; 11 suites, 178 tests passed |
+| Package regression test (included in check) | All registered entries match the required path, have colocated documentation/tests, load natively and register commands |
+| `npm pack --dry-run --json` | Exit 0; all four extension directories and shared helper included; no tarball created |
+| `git diff --check` | Exit 0 |
+
+The independent frozen `check_package` runner is not present in this workspace
+and was not executed here. These results establish that the reported layout
+counterexample is repaired, not that the entire independent gate passed. Live
+Pi UI and real model calls were not exercised or counted as passed. Existing
+`.ouroboros/context_pack.json` changes and `src/.README.md.swp` are preserved.

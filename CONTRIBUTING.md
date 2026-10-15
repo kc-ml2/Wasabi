@@ -66,7 +66,7 @@ package.json
 - Give each sub-extension a `README.md` describing its purpose, commands, configuration, usage, and limitations as applicable. Keep package installation and an overview with links to these READMEs in the root `README.md`.
 - Keep sub-extensions self-contained. Extract shared code only when multiple sub-extensions need it, and document the shared boundary without coupling one sub-extension to another's internal implementation.
 
-Existing extensions currently use flat files under `extensions/`. Migrate them in a focused refactoring change, updating imports, manifest entries, tests, and documentation together.
+All registered extensions use this directory layout. Preserve it when adding or reorganizing extensions, updating imports, manifest entries, tests, and documentation together.
 
 ## Development
 

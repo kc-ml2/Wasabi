@@ -9,6 +9,24 @@ describe("Wasabi package loading", () => {
       import assert from "node:assert/strict";
       import { readFile } from "node:fs/promises";
       const manifest = JSON.parse(await readFile("./package.json", "utf8"));
+      for (const registered of manifest.pi.extensions) {
+        assert.match(registered, /^\\.\\/extensions\\/[^/]+\\/index\\.ts$/,
+          \`Invalid registered sub-extension: \${registered}\`);
+        const { readdir } = await import("node:fs/promises");
+        const directory = registered.slice(0, registered.lastIndexOf("/"));
+        const files = await readdir(directory);
+        assert(files.includes("README.md"), \`\${directory} needs usage documentation\`);
+        assert(files.some(name => name.endsWith(".test.ts")), \`\${directory} needs colocated tests\`);
+        const { default: extension } = await import(registered);
+        assert.equal(typeof extension, "function");
+        const registeredCommands = [];
+        extension({
+          on: () => {},
+          registerCommand: name => registeredCommands.push(name),
+          appendEntry: () => assert.fail("Loading must not persist configuration"),
+        });
+        assert(registeredCommands.length > 0, \`\${registered} must register its commands\`);
+      }
       const entry = "./extensions/wasabi/index.ts";
       assert(manifest.pi.extensions.includes(entry));
       const { default: wasabi } = await import(entry);
