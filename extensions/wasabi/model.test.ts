@@ -31,6 +31,95 @@ function harness() {
 const checking = { systemPrompt: "Check request", messages: [] };
 const clarification = { systemPrompt: "Clarify request", messages: [] };
 
+function extensionHarness() {
+  const h = harness();
+  const events: Record<string, any> = {};
+  const commands: Record<string, any> = {};
+  const response = { stopReason: "stop", content: [{ type: "text", text:
+    JSON.stringify({ missing_options: [], recommended_combination: [] }) }] };
+  h.invoke.mockResolvedValue(response);
+  wasabi({ ...h.pi,
+    registerCommand: (name: string, command: any) => { commands[name] = command; },
+    on: (name: string, callback: any) => { events[name] = callback; },
+  } as any, h.invoke);
+  return { ...h, events, commands, response };
+}
+
+test.each(["interactive", "rpc"])("%s input shares a pending model command without using the main model", async source => {
+  const h = extensionHarness();
+  let choose!: (choice: string) => void;
+  h.select.mockImplementation(() => new Promise(resolve => { choose = resolve; }));
+  const selecting = h.commands["wasabi-model"].handler("", h.ctx);
+  let returned = false;
+  const input = h.events.input({ source, text: "Research the alternatives" }, h.ctx)
+    .then((result: any) => { returned = true; return result; });
+  // Let promise continuations run: the input must remain held by the chooser.
+  await Promise.resolve();
+  expect(returned).toBe(false);
+  expect(h.select).toHaveBeenCalledTimes(1);
+  expect(h.invoke).not.toHaveBeenCalled();
+  expect(h.ctx.modelRegistry.getApiKeyAndHeaders).not.toHaveBeenCalled();
+  h.ctx.model = { provider: "other", id: "new-main" };
+  choose("provider/user-chosen-model");
+  await selecting;
+  expect(await input).toEqual({ action: "continue" });
+  expect(h.ctx.modelRegistry.getApiKeyAndHeaders).toHaveBeenCalledWith(h.dedicated);
+  expect(h.invoke).toHaveBeenCalledTimes(1);
+  expect(h.invoke.mock.calls[0][0]).toBe(h.dedicated);
+});
+
+test("private clarification and resumed input retain selection across main-model changes", async () => {
+  const h = extensionHarness();
+  await h.commands["wasabi-model"].handler("provider/user-chosen-model", h.ctx);
+  let finishCheck!: (response: any) => void;
+  let started!: () => void;
+  const checkingStarted = new Promise<void>(resolve => { started = resolve; });
+  h.invoke.mockImplementationOnce(() => {
+    started();
+    return new Promise(resolve => { finishCheck = resolve; });
+  });
+  const first = h.events.input({ source: "interactive", text: "Compare speed or cost" }, h.ctx);
+  await checkingStarted;
+  h.ctx.model = { provider: "other", id: "changed-during-checking" };
+  h.select.mockImplementation(async (title: string) => {
+    // Neither the private question UI nor review may replace the selected model.
+    h.ctx.model = { provider: "other", id: "changed-during-private-ui" };
+    return title.includes("Review final prompt") ? "Approve and send" : "Confirm recommended combination";
+  });
+  finishCheck({ stopReason: "stop", content: [{ type: "text", text: JSON.stringify({
+    missing_options: [{ id: "focus", question: "Which focus?",
+      evidence: { message_index: -1, quote: "speed or cost" }, available_choices: [
+        { id: "speed", label: "Speed", evidence: { message_index: -1, quote: "speed" } },
+        { id: "cost", label: "Cost", evidence: { message_index: -1, quote: "cost" } },
+      ] }], recommended_combination: [{ option_id: "focus", choice_id: "speed" }],
+  }) }] });
+  expect(await first).toEqual({ action: "transform", text: expect.stringContaining("Speed"), images: undefined });
+  expect(h.invoke).toHaveBeenCalledTimes(1);
+  expect(h.select.mock.calls.map(call => call[0])).toEqual([
+    expect.stringContaining("Clarification"), expect.stringContaining("Review final prompt"),
+  ]);
+  await h.events.session_start({ reason: "resume" }, h.ctx);
+  expect(await h.events.input({ source: "rpc", text: "Implement the result" }, h.ctx))
+    .toEqual({ action: "continue" });
+  expect(h.invoke.mock.calls.map(call => call[0])).toEqual([h.dedicated, h.dedicated]);
+  expect(h.ctx.modelRegistry.getApiKeyAndHeaders.mock.calls.map((call: any[]) => call[0]))
+    .toEqual([h.dedicated, h.dedicated]);
+  expect(h.entries.filter(entry => entry.customType === MODEL_ENTRY_TYPE))
+    .toEqual([{ type: "custom", customType: MODEL_ENTRY_TYPE, data: { key: "provider/user-chosen-model" } }]);
+});
+
+test("a user can choose any authenticated provider and model without lightweight-name heuristics", async () => {
+  const h = harness();
+  const selected = { provider: "custom-provider", id: "arbitrary-user-choice" };
+  h.ctx.modelRegistry.getAvailable.mockReturnValue([h.main, selected]);
+  h.select.mockResolvedValue("custom-provider/arbitrary-user-choice");
+  await h.client.complete(h.ctx, checking);
+  h.ctx.model = { provider: "another-provider", id: "another-main" };
+  await h.client.complete(h.ctx, clarification);
+  expect(h.select.mock.calls[0][1]).toEqual(["provider/main-model", "custom-provider/arbitrary-user-choice"]);
+  expect(h.invoke.mock.calls.map(call => call[0])).toEqual([selected, selected]);
+});
+
 test("first use waits for explicit selection before authentication or invocation", async () => {
   const h = harness();
   let choose!: (choice: string) => void;
