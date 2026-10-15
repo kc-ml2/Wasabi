@@ -1,4 +1,27 @@
-# AC 7 validation record
+# Wasabi validation record
+
+## AC 2: early finish and current-draft approval
+
+Validated on 2026-10-15 with `npm run check`: TypeScript passed and all
+11 Jest suites / 183 tests passed. `git diff --check` also passed.
+
+The clarification tests cover unlimited question revisits, finish without a
+draft, explicit answers plus applicable prior decisions, exclusion of unapproved
+recommendations, separately displayed unresolved options, revision approval
+invalidation, and single forwarding. Corrected review reconciliation so an
+explicitly answered option is no longer listed as unresolved through its older
+unconfirmed resolution; unresolved entries represented by questions are not
+duplicated by ID.
+
+The input/recovery tests cover a nonresponsive provider, immediate cancellation
+on finish, retained prior decisions, editing before approval, and late provider
+responses. Added both approval and cancellation paths while an edited draft is
+waiting for a decision: a late provider rejection and elapsed timeout cannot
+settle the input, open recovery, or persist private dialogs. Only approval
+returns the edited prompt through the input transform; cancellation consumes
+the input. These are mocked Pi/provider tests, not live Pi or real-model checks.
+
+## AC 7: package loading
 
 Executed on 2026-10-15 with Node v25.8.1 in the
 `ralph-wasabi-recovery-20261015` worktree.

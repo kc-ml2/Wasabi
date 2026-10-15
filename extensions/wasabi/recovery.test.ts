@@ -59,9 +59,11 @@ function harness(actions: string[], invoke: any) {
     modelRegistry: { getAvailable: () => [{ provider: "p", id: "light" }],
       getApiKeyAndHeaders: async () => ({ ok: true, apiKey: "key" }) },
     ui: { select: jest.fn<any>(async () => actions.shift()), notify: jest.fn(), setStatus: jest.fn() } };
-  wasabi({ on: (name: string, fn: any) => { handlers[name] = fn; },
-    registerCommand: (name: string, command: any) => { commands[name] = command; }, appendEntry: jest.fn() } as any, invoke);
-  return { ctx, handlers, commands };
+  const pi = { on: (name: string, fn: any) => { handlers[name] = fn; },
+    registerCommand: (name: string, command: any) => { commands[name] = command; }, appendEntry: jest.fn(),
+    sendMessage: jest.fn(), sendUserMessage: jest.fn() };
+  wasabi(pi as any, invoke);
+  return { ctx, handlers, commands, pi };
 }
 
 test.each(["Send original unchanged", "Cancel request"])("provider errors preserve original and support %s", async action => {
@@ -290,6 +292,47 @@ test("finish revokes a clarifying call before cancellation completes", async () 
   expect(state.interaction_state).toBe("reviewing");
   expect(state.failure).toBeUndefined();
 });
+
+test.each(["Approve and send", "Cancel request"])(
+  "early finish keeps an edited draft private until the user chooses %s despite a late provider failure", async action => {
+    jest.useFakeTimers();
+    let fail!: (error: Error) => void;
+    let decide!: (action: string) => void;
+    const invoke = jest.fn<any>(() => new Promise((_resolve, reject) => { fail = reject; }));
+    const h = harness([], invoke);
+    const entries = [{ type: "message", message: { role: "user", content: "Use Kotlin for this task." } }];
+    h.ctx.sessionManager.getBranch = () => entries;
+    h.ctx.ui.editor = jest.fn<any>(async (_title: string, draft: string) => draft + "\nInclude tests.");
+    h.ctx.ui.select.mockResolvedValueOnce("Finish clarification and review prompt")
+      .mockResolvedValueOnce("Edit final prompt")
+      .mockImplementationOnce(() => new Promise(resolve => { decide = resolve; }));
+    await h.commands["wasabi-model"].handler("p/light", h.ctx);
+    h.pi.appendEntry.mockClear();
+    const before = JSON.stringify(entries);
+    let settled = false;
+    const input = h.handlers.input({ source: "interactive", text: "Implement retry handling" }, h.ctx)
+      .then((result: any) => { settled = true; return result; });
+    await jest.advanceTimersByTimeAsync(200);
+    expect(settled).toBe(false);
+    expect((invoke.mock.calls[0][2] as any).signal.aborted).toBe(true);
+    const edited = h.ctx.ui.editor.mock.results[0];
+    const draft = await edited.value;
+    expect(draft).toContain("Kotlin");
+    expect(h.ctx.ui.select.mock.calls[2][0]).toContain(draft);
+    fail(new Error("Obsolete provider failure"));
+    await jest.advanceTimersByTimeAsync(CALL_TIMEOUT_MS);
+    expect(settled).toBe(false);
+    expect(h.ctx.ui.select).toHaveBeenCalledTimes(3);
+    expect(invoke).toHaveBeenCalledTimes(1);
+    decide(action);
+    expect(await input).toEqual(action === "Approve and send"
+      ? { action: "transform", text: draft, images: undefined } : { action: "handled" });
+    expect(JSON.stringify(entries)).toBe(before);
+    expect(h.pi.appendEntry).not.toHaveBeenCalled();
+    expect(h.pi.sendMessage).not.toHaveBeenCalled();
+    expect(h.pi.sendUserMessage).not.toHaveBeenCalled();
+    expect(h.ctx.ui.setStatus).toHaveBeenLastCalledWith("wasabi", undefined);
+  });
 
 
 test("finish before any model reply retains the captured language directive through editing and approval", async () => {

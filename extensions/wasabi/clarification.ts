@@ -146,9 +146,11 @@ export async function reviewClarification(ctx: ExtensionContext, request: Checke
   }
   while (state.interaction_state === "reviewing") {
     const answered = new Set(state.clarification_history.map(item => item.question));
+    const resolvedIds = new Set(state.clarification_history.map(item => item.option_id));
     const unresolved = [
       ...options.filter(option => !answered.has(option.question)).map(option => option.question),
-      ...(request.check.option_resolutions ?? []).filter(item => item.applies_to_request && !item.confirmed)
+      ...(request.check.option_resolutions ?? []).filter(item => item.applies_to_request && !item.confirmed
+        && !resolvedIds.has(item.id) && !options.some(option => option.id === item.id))
         .map(item => item.id),
     ];
     const unresolvedDetails = startReview

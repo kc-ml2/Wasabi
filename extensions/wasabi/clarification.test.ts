@@ -182,6 +182,21 @@ test("additional explicit details are accumulated instead of replacing earlier d
   expect(result).not.toContain("Additional clarification");
 });
 
+test("review reconciles explicit answers with previously unconfirmed option resolutions", async () => {
+  const ctx = ui(["1. Which focus?", "2. Deployment", "Finish clarification and review prompt", "Approve and send"]);
+  const result = await reviewClarification(ctx, { check: { ...request.check,
+    option_resolutions: ["focus", "format"].map(id => ({ id, applies_to_request: true,
+      confirmed: false, value: "Unapproved suggestion",
+      evidence: { message_index: 0, quote: "Performance" } })),
+  } });
+  expect(result).toBe("Compare the databases\n\n- focus: Deployment");
+  const [draft, unresolved] = (ctx.ui.select.mock.calls[3][0] as string)
+    .split("Unresolved options (not included in the prompt):");
+  expect(draft).not.toContain("Unapproved suggestion");
+  expect(unresolved).toContain("format");
+  expect(unresolved).not.toContain("focus");
+});
+
 test.each(["TypeScript", "Rust", "Kotlin", "Elixir"])(
   "finish retains settled %s even when the model omits resolutions, and exposes unresolved choices", async language => {
     const ctx = ui(["Finish clarification and review prompt", "Approve and send"]);
