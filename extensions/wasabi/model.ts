@@ -1,5 +1,6 @@
 import { complete } from "@earendil-works/pi-ai/compat";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import { WasabiIndicator } from "./indicator.ts";
 
 export const MODEL_ENTRY_TYPE = "wasabi-model";
 
@@ -8,16 +9,19 @@ export class WasabiModel {
   private key: string | undefined;
   private selection: Promise<boolean> | undefined;
   private selectionGeneration = 0;
+  private leaveSelection: (() => void) | undefined;
 
   constructor(
     private readonly pi: Pick<ExtensionAPI, "appendEntry">,
     private readonly invoke: typeof complete = complete,
+    private readonly indicator = new WasabiIndicator(),
   ) {}
 
   get selectedKey(): string | undefined { return this.key; }
 
   restore(ctx: ExtensionContext): void {
-    if (this.selection && ctx.hasUI) ctx.ui.setStatus("wasabi", undefined);
+    this.leaveSelection?.();
+    this.leaveSelection = undefined;
     this.selectionGeneration++;
     this.selection = undefined;
     this.key = undefined;
@@ -31,7 +35,8 @@ export class WasabiModel {
   async select(ctx: ExtensionContext, requested = ""): Promise<boolean> {
     // Ordinary inputs share the pending chooser instead of opening competing dialogs.
     if (!requested.trim() && this.selection) return this.selection;
-    if (this.selection && requested.trim() && ctx.hasUI) ctx.ui.setStatus("wasabi", undefined);
+    this.leaveSelection?.();
+    this.leaveSelection = undefined;
     const generation = ++this.selectionGeneration;
     const pending = this.choose(ctx, requested, generation);
     this.selection = pending;
@@ -49,13 +54,15 @@ export class WasabiModel {
     if (!explicit && !ctx.hasUI) return false;
     let choice: string | undefined = explicit;
     if (!explicit) {
-      ctx.ui.setStatus("wasabi", "Wasabi · Selecting dedicated model · Main session paused");
+      const leave = this.indicator.enter(ctx, "Wasabi · Selecting dedicated model · Main session paused");
+      this.leaveSelection = leave;
       try {
         choice = await ctx.ui.select(
           "Wasabi · Choose a lightweight model for checking and clarification", keys,
         );
       } finally {
-        if (generation === this.selectionGeneration) ctx.ui.setStatus("wasabi", undefined);
+        leave();
+        if (this.leaveSelection === leave) this.leaveSelection = undefined;
       }
     }
     if (generation !== this.selectionGeneration) return false;

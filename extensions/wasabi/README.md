@@ -96,11 +96,16 @@ questions, answers, and review history stay in memory and are never appended to
 the main session. Headless requests with missing options remain held. Invalid
 checker responses also hold the input rather than passing an unchecked request on.
 
-While Wasabi checks a request, asks questions, or reviews the final prompt, Pi
+During model selection Pi shows **Wasabi · Selecting dedicated model · Main session paused**.
+While Wasabi checks a request, asks questions, reviews the final prompt, recovers
+from a failure, or forwards an approved prompt, Pi
 shows **Wasabi · Private clarification · Main session paused** in its status area.
 The indicator clears before returning control to the main session, including
-approval, cancellation, requests needing no clarification, and errors. Dialog and
-editor titles also identify Wasabi.
+approval, cancellation, requests needing no clarification, and completed error
+recovery. Opening or closing a model chooser during a held request preserves the
+request's indicator. Switching sessions clears the old interaction's indicator;
+late cleanup cannot clear a new interaction. Dialog and editor titles also
+identify Wasabi.
 
 ## Interrupted calls and recovery
 

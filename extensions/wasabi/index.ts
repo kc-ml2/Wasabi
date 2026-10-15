@@ -5,21 +5,28 @@ import { createReviewRequest, WasabiChecker } from "./checker.ts";
 import { complete } from "@earendil-works/pi-ai/compat";
 import { WasabiRequest, WasabiReviewRequested } from "./recovery.ts";
 import { reviewClarification } from "./clarification.ts";
+import { WasabiIndicator } from "./indicator.ts";
 
 export default function wasabi(pi: ExtensionAPI, invoke: typeof complete = complete) {
-  const model = new WasabiModel(pi, invoke);
+  const indicator = new WasabiIndicator();
+  const model = new WasabiModel(pi, invoke, indicator);
   const automation = new WasabiAutomation(pi, model);
   const checker = new WasabiChecker(model);
   let active: WasabiRequest | undefined;
-  pi.on("session_start", async (_event, ctx) => { active?.cancel(); automation.restore(ctx); });
+  pi.on("session_start", async (_event, ctx) => {
+    active?.cancel();
+    active = undefined;
+    indicator.reset();
+    automation.restore(ctx);
+  });
   pi.on("input", async (event, ctx) => {
     if (event.source === "extension" || !await automation.shouldCheck(ctx)) return { action: "continue" };
     active?.cancel();
     const state = new WasabiRequest(event.text);
     const reviewRequest = createReviewRequest(ctx, event.text);
     active = state;
+    const leave = indicator.enter(ctx, "Wasabi · Private clarification · Main session paused");
     try {
-      if (ctx.hasUI) ctx.ui.setStatus("wasabi", "Wasabi · Private clarification · Main session paused");
       while (!state.cancelled && !state.forwarded) {
         try {
           const request = await state.call(ctx, signal => checker.check(ctx, state.original_prompt, signal));
@@ -68,7 +75,8 @@ export default function wasabi(pi: ExtensionAPI, invoke: typeof complete = compl
       }
       return { action: "handled" };
     } finally {
-      if (ctx.hasUI && active === state) ctx.ui.setStatus("wasabi", undefined);
+      leave();
+      if (active === state) active = undefined;
     }
   });
   pi.registerCommand("wasabi", {
