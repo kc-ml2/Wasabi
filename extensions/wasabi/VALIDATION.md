@@ -1,5 +1,33 @@
 # Wasabi validation record
 
+## AC 2: partial clarification, repeated edits and explicit final approval
+
+Revalidated on 2026-10-15 with `npm run check`: TypeScript and all
+11 suites / 225 tests passed. `git diff --check` passed. No production
+change was needed for this criterion.
+
+Added three input-handler scenarios with one explicit nonrecommended answer,
+one unanswered option and an applicable prior Kotlin instruction. Finishing
+clarification builds a review draft from the original, prior instruction and
+explicit answer, excluding the unapproved recommendation. The unanswered option
+appears separately. After two edits, the input remains pending until the user
+approves, cancels or dismisses review. Approval returns only the current edited
+prompt; cancellation and dismissal consume the input. Exactly one model call
+occurs, and no private questions, answers or drafts are appended or sent to the
+session. The interaction indicator clears after each outcome.
+
+Existing recovery tests exercise finish before any model reply or final draft,
+abort and generation invalidation without waiting for provider cancellation,
+preservation of applicable prior instructions, edited drafts held for approval,
+and ignored late successes/failures. Existing clarification tests exercise more
+than 100 question revisits, explicit answers with remaining unresolved options,
+approval invalidation on edit and at-most-once forwarding across action batches.
+
+These checks use mocked Pi contexts and providers. Live Pi, real-model calls and
+the independent acceptance harness were not executed in this run. The existing
+`.ouroboros/context_pack.json` change and `src/.README.md.swp` were preserved
+and excluded from the commit.
+
 ## AC 1: conversation-only checking and settled versus missing options
 
 Revalidated on 2026-10-15 with `npm run check`: TypeScript and all
