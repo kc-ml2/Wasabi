@@ -182,6 +182,60 @@ test("additional explicit details are accumulated instead of replacing earlier d
   expect(result).not.toContain("Additional clarification");
 });
 
+test("selected and written answers stay visible in controls and additional clarification editors", async () => {
+  const ctx = ui([
+    "1. Which focus?", "2. Deployment", "Add clarification",
+    "1. Which focus?", "Write an answer", "Add clarification",
+    "Finish clarification and review prompt", "Approve and send",
+  ], ["Include benchmarks", "Deployment on ARM servers", undefined]);
+  const final = await reviewClarification(ctx, request);
+  const selectedDraft = "Compare the databases\n\n- focus: Deployment";
+  const writtenDraft = "Compare the databases\n\n- focus: Deployment on ARM servers\n- Include benchmarks";
+  // After choosing an alternative, controls show the accepted answer rather
+  // than displaying the initial recommendation as if nothing had been chosen.
+  const afterChoice = ctx.ui.select.mock.calls[2][0] as string;
+  expect(afterChoice).toContain("Confirmed answer: Deployment");
+  expect(afterChoice).toContain(selectedDraft);
+  expect(afterChoice).not.toContain("Performance (recommended)");
+  expect(ctx.ui.editor.mock.calls[0][0]).toContain(selectedDraft);
+  expect(ctx.ui.editor.mock.calls[0][1]).toBe("");
+  // Returning to the question retains both the answer and added free-form text.
+  expect(ctx.ui.select.mock.calls[4][0]).toContain("Current answer: Deployment");
+  expect(ctx.ui.editor.mock.calls[1][0]).toContain("- Include benchmarks");
+  expect(ctx.ui.editor.mock.calls[1][1]).toBe("Deployment");
+  const afterWriting = ctx.ui.select.mock.calls[5][0] as string;
+  expect(afterWriting).toContain("Confirmed answer: Deployment on ARM servers");
+  expect(afterWriting).toContain(writtenDraft);
+  expect(ctx.ui.editor.mock.calls[2][0]).toContain(writtenDraft);
+  // Closing the editor preserves the same preview, review and forwarded text.
+  expect(ctx.ui.select.mock.calls[6][0]).toContain(writtenDraft);
+  expect(ctx.ui.select.mock.calls[7][0]).toContain(writtenDraft);
+  expect(final).toBe(writtenDraft);
+});
+
+test("previewing answers neither changes approval state nor includes unconfirmed recommendations", () => {
+  const state = new WasabiClarification("Original", ["language: TypeScript"]);
+  state.apply([{ type: "answer", question: "Focus?", option_id: "focus", answer: "Deployment" }]);
+  const preview = state.prompt_preview;
+  expect(preview).toBe("Original\n\n- language: TypeScript\n- focus: Deployment");
+  expect(state.final_prompt).toBeUndefined();
+  expect(state.prompt_revision).toBe(0);
+  expect(state.approved).toBe(false);
+  expect(state.apply([{ type: "approve" }, { type: "forward" }])).toBeUndefined();
+  state.apply([{ type: "finish" }]);
+  expect(state.final_prompt).toBe(preview);
+  expect(state.approved).toBe(false);
+});
+
+test("closing a reopened answer editor keeps its previous answer and draft", async () => {
+  const ctx = ui(["1. Which focus?", "2. Deployment", "1. Which focus?", "Write an answer",
+    "Finish clarification and review prompt", "Approve and send"], [undefined]);
+  const final = await reviewClarification(ctx, request);
+  expect(ctx.ui.editor.mock.calls[0][1]).toBe("Deployment");
+  expect(ctx.ui.select.mock.calls[4][0]).toContain("Confirmed answer: Deployment");
+  expect(final).toBe("Compare the databases\n\n- focus: Deployment");
+});
+
 test("review reconciles explicit answers with previously unconfirmed option resolutions", async () => {
   const ctx = ui(["1. Which focus?", "2. Deployment", "Finish clarification and review prompt", "Approve and send"]);
   const result = await reviewClarification(ctx, { check: { ...request.check,

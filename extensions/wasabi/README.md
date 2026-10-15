@@ -103,6 +103,13 @@ questions, answers, and review history stay in memory and are never appended to
 the main session. Headless requests with missing options remain held. Invalid
 checker responses also hold the input rather than passing an unchecked request on.
 
+During clarification, the controls show each question's latest confirmed answer
+and the current prompt draft. The same draft is visible above individual answer
+and additional-clarification editors, so earlier choices and free-form details
+remain visible while writing. Reopening **Write an answer** prefills the previous
+answer. Draft previews include only applicable confirmed decisions and explicit
+answers; viewing them never approves or sends the request.
+
 During model selection Pi shows **Wasabi · Selecting dedicated model · Main session paused**.
 While Wasabi checks a request, asks questions, reviews the final prompt, recovers
 from a failure, or forwards an approved prompt, Pi

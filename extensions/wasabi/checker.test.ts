@@ -442,8 +442,13 @@ test.each([
     if (actions.includes(`1. ${scenario.question}`)) {
       // Reuse the omitted decision without offering it as another question.
       expect(actions.filter(action => /^\d+\./.test(action))).toEqual([`1. ${scenario.question}`]);
-      expect(title).toContain(`${scenario.choices[0]} (recommended)`);
-      expect(title).toContain(scenario.proposal);
+      if (answered) {
+        expect(title).toContain(`Confirmed answer: ${scenario.choices[1]}`);
+        expect(title).toContain(`${scenario.option}: ${scenario.choices[1]}`);
+      } else {
+        expect(title).toContain(`${scenario.choices[0]} (recommended)`);
+        expect(title).toContain(scenario.proposal);
+      }
       return answered ? "Finish clarification and review prompt" : `1. ${scenario.question}`;
     }
     answered = true;

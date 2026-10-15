@@ -35,6 +35,15 @@ export class WasabiClarification {
     this.applicable_decisions = applicable_decisions;
   }
 
+  /** Preview uses exactly the same explicit decisions as the final draft. */
+  get prompt_preview(): string {
+    if (this.final_prompt !== undefined) return this.final_prompt;
+    const decisions = [...this.applicable_decisions, ...new Map(this.clarification_history.map(item =>
+      [item.question, item.option_id ? `${item.option_id}: ${item.answer}` : item.answer])).values()];
+    return this.original_prompt + (decisions.length
+      ? `\n\n${decisions.map(answer => `- ${answer}`).join("\n")}` : "");
+  }
+
   /** Apply ordered user actions; return a prompt only for the first approved forward. */
   apply(actions: ClarificationAction[]): string | undefined {
     return applyClarificationActions(actions, this);
@@ -57,12 +66,7 @@ export function applyClarificationActions(
       case "finish":
         if (state.interaction_state !== "clarifying") break;
         // Only explicit answers are included, never unconfirmed recommendations.
-        {
-          const decisions = [...state.applicable_decisions, ...new Map(state.clarification_history.map(item =>
-            [item.question, item.option_id ? `${item.option_id}: ${item.answer}` : item.answer])).values()];
-          state.final_prompt = state.original_prompt + (decisions.length
-            ? `\n\n${decisions.map(answer => `- ${answer}`).join("\n")}` : "");
-        }
+        state.final_prompt = state.prompt_preview;
         state.interaction_state = "reviewing";
         break;
       case "edit":
@@ -107,15 +111,20 @@ export async function reviewClarification(ctx: ExtensionContext, request: Checke
   const finish = "Finish clarification and review prompt";
   const cancel = "Cancel request";
   const confirm = "Confirm recommended combination";
-  const details = options.map(option => {
-    const recommended = request.check.recommended_combination.find(item => item.option_id === option.id);
-    return `${option.question}\nConversation: ${option.evidence.quote}\n${option.available_choices.map(choice =>
-      `- ${choice.label}${choice.id === recommended?.choice_id ? " (recommended)" : ""}`).join("\n")}`;
-  }).join("\n\n");
+  const preview = () => `Current prompt draft (not sent; final approval required):\n${state.prompt_preview}`;
+  const currentAnswer = (question: string) => new Map(state.clarification_history.map(item =>
+    [item.question, item.answer])).get(question);
   // No turn counter or question limit: questions may be revisited and details added freely.
   while (state.interaction_state === "clarifying") {
+    const details = options.map(option => {
+      const answer = currentAnswer(option.question);
+      if (answer !== undefined) return `${option.question}\nConfirmed answer: ${answer}`;
+      const recommended = request.check.recommended_combination.find(item => item.option_id === option.id);
+      return `${option.question}\nNot answered\nConversation: ${option.evidence.quote}\n${option.available_choices.map(choice =>
+        `- ${choice.label}${choice.id === recommended?.choice_id ? " (recommended)" : ""}`).join("\n")}`;
+    }).join("\n\n");
     const questions = options.map((option, index) => `${index + 1}. ${option.question}`);
-    const action = await ctx.ui.select(`Wasabi · Clarification\n${details}`, [
+    const action = await ctx.ui.select(`Wasabi · Clarification\n${details}\n\n${preview()}`, [
       confirm, ...questions, "Add clarification", finish, cancel,
     ]);
     if (!action || action === cancel) { state.apply([{ type: "cancel" }]); return undefined; }
@@ -131,16 +140,18 @@ export async function reviewClarification(ctx: ExtensionContext, request: Checke
     }
     const option = options[questions.indexOf(action)];
     if (option) {
+      const previous = currentAnswer(option.question);
       const choices = option.available_choices.map((choice, index) => `${index + 1}. ${choice.label}`);
-      const answer = await ctx.ui.select(`Wasabi · ${option.question}`, [...choices, "Write an answer", finish, cancel]);
+      const answer = await ctx.ui.select(`Wasabi · ${option.question}\nCurrent answer: ${previous ?? "Not answered"}\n\n${preview()}`,
+        [...choices, "Write an answer", finish, cancel]);
       if (answer === cancel) { state.apply([{ type: "cancel" }]); return undefined; }
       if (answer === finish) { state.apply([{ type: "finish" }]); break; }
       const choice = option.available_choices[choices.indexOf(answer ?? "")];
       const text = choice?.label ?? (answer === "Write an answer"
-        ? await ctx.ui.editor(`Wasabi · ${option.question} (close to return to controls)`, "") : undefined);
+        ? await ctx.ui.editor(`Wasabi · ${option.question} (close to return to controls)\n\n${preview()}`, previous ?? "") : undefined);
       if (text?.trim()) state.apply([{ type: "answer", question: option.question, answer: text, option_id: option.id }]);
     } else if (action === "Add clarification") {
-      const answer = await ctx.ui.editor("Wasabi · Additional clarification (close to return to controls)", "");
+      const answer = await ctx.ui.editor(`Wasabi · Additional clarification (close to return to controls)\n\n${preview()}`, "");
       if (answer?.trim()) state.apply([{ type: "answer", question: `Additional clarification ${state.clarification_history.length}`, answer }]);
     }
   }
