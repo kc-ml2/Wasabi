@@ -1,5 +1,67 @@
 # Wasabi validation record
 
+## AC 7: recovery revalidation and authoritative gate evidence
+
+Revalidated commit `81120c8` on 2026-10-15 with Node v25.8.1 and npm 11.11.0.
+The package-loading and directory-layout repairs are already present in
+`7310c08` and `19a0000`; no further production change was needed.
+
+### Failures reproduced in this run
+
+- Extracted `extensions/wasabi/model.ts` from `7310c08^` into a temporary
+  directory and imported it with native Node. Exit 1 reproduced
+  `ERR_UNSUPPORTED_TYPESCRIPT_SYNTAX` for a constructor parameter property.
+  Native imports of the current `model.ts` and Wasabi entry point exited 0.
+- Inspected `19a0000^:package.json`. Its LiteLLM, Crop and Crunch registrations
+  are flat `.ts` paths rather than `extensions/<name>/index.ts`. The current
+  package regression test validates all four registrations, colocated READMEs
+  and tests, native imports, and command registration.
+- Exported `81120c8` with `git archive` into a temporary directory without
+  `node_modules`. `npm run check` exited 127 with `tsc: command not found`,
+  reproducing the dependency-setup failure in the generation-1 gate record.
+  Ran the documented `npm ci --no-audit --no-fund` there: exit 0, 532 packages
+  installed. Then `npm run check` exited 0: TypeScript and all 11 suites /
+  220 tests passed. Temporary files were removed without changing this
+  worktree's dependency tree or lockfile.
+
+### Independent check-package records inspected
+
+The earlier "not executed" notes below describe those workers' actions. This
+run additionally found authoritative boundary receipts under
+`~/.ouroboros/boundary/`:
+
+| Execution | Receipt SHA-256 / filename stem | AC 7 result |
+| --- | --- | --- |
+| `evolve:ralph-wasabi-recovery-20261015:generation:1` | `82b9a032d8548c3906444a892d9555bddd07b204643f5c31fc56651d7431fb76` | `r7_package_validation.py`: exit 1, missing `tsc` |
+| Same generation | `53db9d407c8a0bf3b9d54070a9c9b5140ce2703758690314ea913d23b0a4b083` | `r7_package_validation.py`: exit 0, `reason=passed`; package verdict `pass` |
+| `evolve:ralph-wasabi-recovery-20261015:generation:2` | `e7e2996e0a2fdf8e7da9f590f69c7df470f11c8a59b74009c44fac66ec4e78df` | `c7_package_validation.py`: exit 0, `reason=preservation_passed`; admission verdict `admitted` |
+
+The successful generation-2 admission ran native Node validation and
+`npm run check` (178 tests at that revision). An admission result is not a
+post-implementation gate result. These are existing receipts inspected during
+this run, not newly executed independent checks. The workspace's package records
+contain redacted manifests without executable check files, and the independent
+runner was not rerun here. Its current-revision verdict remains for the parent
+workflow; unavailable checks are not counted as newly passed.
+
+### Checks executed against the current implementation
+
+| Check | Result |
+| --- | --- |
+| `npm run check` in this worktree | Exit 0; TypeScript, 11 suites / 220 tests passed |
+| `npm ci --no-audit --no-fund` then `npm run check` in a clean export | Both exit 0; TypeScript, 11 suites / 220 tests passed |
+| Native imports of current Wasabi model and entry point | Exit 0 |
+| All registered extensions' layout, docs, tests and native registration | Passed by `extensions/wasabi/package.test.ts` in both check runs |
+| `npm pack --dry-run --json` | Exit 0; all four extension directories and shared helper included; no tarball created |
+| `git diff --check` | Exit 0 |
+
+The documented sub-extension layout, root README links, Jest discovery and
+TypeScript inclusion remain satisfied. npm emitted dependency deprecation notices
+and the pack command's `.gitignore` fallback warning; neither check failed.
+Live Pi UI and real-model calls were not exercised and are not counted as passed.
+The existing `.ouroboros/context_pack.json` modification and `src/.README.md.swp`
+were preserved. This run changes only this validation record.
+
 ## AC 6: automatic checking activation and explicit off preference
 
 Validated on 2026-10-15 with `npm run check`: TypeScript passed and all
