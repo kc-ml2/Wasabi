@@ -358,6 +358,60 @@ test("finish before any model reply retains the captured language directive thro
   expect(JSON.stringify(entries)).toBe(before);
 });
 
+test.each([
+  "The output format for this task is JSON Lines. This is decided.",
+  "For this request, the deployment target is Cloud Run.",
+  "This task's research scope is database performance.",
+])("finish without a draft retains a settled option through private review and reapproval: %s", async prior => {
+  jest.useFakeTimers();
+  let late!: (value: any) => void;
+  let review!: (action: string) => void;
+  let reapprove!: (action: string) => void;
+  const invoke = jest.fn<any>(() => new Promise(resolve => { late = resolve; }));
+  const h = harness([], invoke);
+  const entries = [{ type: "message", message: { role: "user", content: prior } }];
+  h.ctx.sessionManager.getBranch = () => entries;
+  h.ctx.ui.editor = jest.fn<any>(async (_title: string, draft: string) => draft + "\nInclude tests.");
+  h.ctx.ui.select.mockResolvedValueOnce("Finish clarification and review prompt")
+    .mockImplementationOnce(() => new Promise(resolve => { review = resolve; }))
+    .mockImplementationOnce(() => new Promise(resolve => { reapprove = resolve; }));
+  await h.commands["wasabi-model"].handler("p/light", h.ctx);
+  h.pi.appendEntry.mockClear();
+  const before = JSON.stringify(entries);
+  let completed = false;
+  const input = h.handlers.input({ source: "interactive", text: "Generate the export pipeline" }, h.ctx)
+    .then((result: any) => { completed = true; return result; });
+  await jest.advanceTimersByTimeAsync(200);
+  expect(completed).toBe(false);
+  expect((invoke.mock.calls[0][2] as any).signal.aborted).toBe(true);
+  const [draft, unresolved] = (h.ctx.ui.select.mock.calls[1][0] as string)
+    .split("Unresolved options (not included in the prompt):");
+  expect(draft).toContain("Generate the export pipeline");
+  expect(draft).toContain(prior.split(".")[0]);
+  expect(unresolved).toContain("Checking ended before options were assessed");
+
+  review("Edit final prompt");
+  await jest.advanceTimersByTimeAsync(0);
+  const edited = await h.ctx.ui.editor.mock.results[0].value;
+  expect(edited).toContain(prior.split(".")[0]);
+  expect(edited).toContain("Include tests.");
+  expect(h.ctx.ui.select.mock.calls[2][0]).toContain(edited);
+  expect(completed).toBe(false);
+  // A cancellation-ignoring provider cannot replace the edited draft or send it.
+  late(response);
+  await jest.advanceTimersByTimeAsync(CALL_TIMEOUT_MS);
+  expect(completed).toBe(false);
+  expect(invoke).toHaveBeenCalledTimes(1);
+  expect(h.ctx.ui.select).toHaveBeenCalledTimes(3);
+  reapprove("Approve and send");
+  expect(await input).toEqual({ action: "transform", text: edited, images: undefined });
+  expect(JSON.stringify(entries)).toBe(before);
+  expect(h.pi.appendEntry).not.toHaveBeenCalled();
+  expect(h.pi.sendMessage).not.toHaveBeenCalled();
+  expect(h.pi.sendUserMessage).not.toHaveBeenCalled();
+  expect(h.ctx.ui.setStatus).toHaveBeenLastCalledWith("wasabi", undefined);
+});
+
 test.each(["TypeScript", "Rust", "Kotlin", "Elixir"])(
   "finish with no model response preserves %s, holds review for approval, and ignores late drafts", async language => {
     jest.useFakeTimers();

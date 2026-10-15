@@ -78,8 +78,11 @@ Unresolved questions appear separately and are never silently filled from
 recommendations. If checking is ended before a result exists, review explicitly
 marks the options as unassessed rather than claiming nothing is missing. A
 synchronous conversation snapshot preserves direct response-language instructions
-and explicit “use …” decisions (such as “Use Kotlin for this task”) without waiting
-for the checker or relying on a fixed list of implementation languages. It retains
+and explicit “use …” decisions (such as “Use Kotlin for this task”), as well as
+task-scoped option declarations such as “The output format for this task is JSON
+Lines” or “For this request, the deployment target is Cloud Run”, without waiting
+for the checker or relying on a fixed list of option values. Declarations for the
+same option use the latest value, including current-input overrides. It retains
 exact user wording, ignores assistant suggestions and ambiguous or conditional
 directives, and gives current instructions for the same scope precedence. Empty or
 partial model resolutions do not erase this evidence; an explicit model assessment

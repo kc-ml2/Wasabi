@@ -75,6 +75,19 @@ export function conversationDecisions(conversation: ConversationMessage[], origi
       // The target of "for ..." distinguishes independent instructions; newer
       // instructions for the same target supersede older ones, including input.
       const directive = sentence.match(/^\s*(?:for this (?:task|request|conversation),?\s*)?(?:please\s+)?(?:always\s+)?(?:(?:we(?:'ve| have)?|I(?:'ve| have)?)\s+(?:already\s+)?(?:decided|agreed|settled)\s+(?:to\s+|on\s+))?(use\s+.+?)\s*[.!。]?$/iu);
+      // A scoped assertion also settles an option: users need not phrase every
+      // decision as "use ...". Keep the whole assertion as exact evidence, and
+      // key by its subject so newer values replace only the same option.
+      const assertion = sentence.trim().replace(/[.!。]$/u, "");
+      const declared = assertion.match(/^(?:the\s+)?([\p{L}\d -]+?)\s+for this (?:task|request|conversation)\s+is\s+(.+)$/iu)
+        ?? assertion.match(/^for this (?:task|request|conversation),?\s+(?:the\s+)?([\p{L}\d -]+?)\s+is\s+(.+)$/iu)
+        ?? assertion.match(/^this (?:task|request|conversation)['’]s\s+([\p{L}\d -]+?)\s+is\s+(.+)$/iu);
+      if (declared && !/\b(?:perhaps|propos\w*|suggest\w*|recommend\w*|tentative|undecided|unconfirmed|unknown|not yet|not (?:decided|settled|confirmed|final))\b/iu.test(assertion)) {
+        const id = `instruction:${declared[1].trim().toLowerCase()}`;
+        decisions.set(id, { id, applies_to_request: true, confirmed: true, value: assertion,
+          evidence: { message_index: index === conversation.length ? -1 : index, quote: assertion } });
+        continue;
+      }
       const value = response ?? directive?.[1];
       if (!value) continue;
       const scope = directive?.[1].match(/\s+for\s+(.+?)\s*$/iu)?.[1].toLowerCase();

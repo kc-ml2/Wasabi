@@ -338,6 +338,47 @@ test("new explicit implementation instructions replace prior decisions for the s
 });
 
 test.each([
+  ["The output format for this task is JSON Lines. This is decided.", "output format", "JSON Lines"],
+  ["For this request, the deployment target is Cloud Run.", "deployment target", "Cloud Run"],
+  ["This task's research scope is database performance.", "research scope", "database performance"],
+])("snapshot retains explicit task-scoped option declarations: %s", (text, option, value) => {
+  const [decision] = conversationDecisions([{ role: "user", text }], "Generate the pipeline");
+  expect(decision).toMatchObject({ id: `instruction:${option}`, applies_to_request: true, confirmed: true,
+    evidence: { message_index: 0 } });
+  expect(decision.value).toContain(value);
+  expect(text).toContain(decision.evidence.quote);
+});
+
+test("current option declarations replace prior values without dropping independent decisions", () => {
+  const prior = [{ role: "user" as const, text:
+    "The output format for this task is JSON Lines. The deployment target for this task is Cloud Run." }];
+  const decisions = conversationDecisions(prior, "For this task, the output format is CSV.");
+  expect(decisions).toHaveLength(2);
+  expect(decisions.find(item => item.id === "instruction:output format")).toMatchObject({
+    value: "For this task, the output format is CSV", evidence: { message_index: -1 },
+  });
+  expect(decisions.find(item => item.id === "instruction:deployment target")?.value).toContain("Cloud Run");
+});
+
+test.each([
+  "The output format for another task is JSON Lines. This is decided.",
+  "The output format for this task might be JSON Lines.",
+  "The output format for this task is not yet decided.",
+  "The output format for this task is a proposed JSON Lines export.",
+  "The output format for this task is JSON Lines or CSV.",
+  "If approved, the output format for this task is JSON Lines.",
+  'Example: "The output format for this task is JSON Lines".',
+  "Is the output format for this task JSON Lines?",
+])("snapshot excludes unrelated and unconfirmed declarations: %s", text => {
+  expect(conversationDecisions([{ role: "user", text }], "Generate the pipeline")).toEqual([]);
+});
+
+test("assistant option declarations are never explicit user decisions", () => {
+  expect(conversationDecisions([{ role: "assistant", text: "The output format for this task is JSON Lines." }],
+    "Generate the pipeline")).toEqual([]);
+});
+
+test.each([
   "Could we use Kotlin?", "Use Kotlin or Rust.", "If needed, use Kotlin.",
   "For another project, use Kotlin.", "The previous task used Kotlin.",
   'Example: "Use Kotlin".',
