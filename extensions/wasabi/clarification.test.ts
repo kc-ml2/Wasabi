@@ -24,10 +24,15 @@ test("current draft needs approval, editing revokes approval, and forwarding is 
   expect(state.apply([{ type: "approve" }, { type: "forward" }])).toBeUndefined();
   state.apply([{ type: "answer", question: "Focus?", answer: "Performance" }, { type: "finish" }, { type: "approve" }]);
   expect(state.approved).toBe(true);
+  expect(state.prompt_revision).toBe(1);
+  expect(state.approved_revision).toBe(1);
   state.apply([{ type: "edit", text: "Edited" }]);
   expect(state.approved).toBe(false);
+  expect(state.prompt_revision).toBe(2);
+  expect(state.approved_revision).toBeNull();
   expect(state.apply([{ type: "forward" }])).toBeUndefined();
   expect(state.apply([{ type: "approve" }, { type: "forward" }])).toBe("Edited");
+  expect(state.approved_revision).toBe(2);
   expect(state.apply([{ type: "forward" }, { type: "edit", text: "Again" }, { type: "approve" }, { type: "forward" }])).toBeUndefined();
   expect(state.forwarded).toBe(true);
 });
@@ -38,8 +43,7 @@ test("no question count limit; history remains private and latest answers form t
   state.apply([{ type: "answer", question: "Question 0", answer: "Corrected" }, { type: "finish" }]);
   expect(state.clarification_history).toHaveLength(251);
   expect(state.final_prompt).toContain("Answer 249");
-  expect(state.final_prompt).toContain("- Corrected");
-  expect(state.final_prompt).not.toContain("Question 0");
+  expect(state.final_prompt).toContain("- Question 0: Corrected");
   expect(state.final_prompt).not.toContain("Answer 0");
   expect(state.approved).toBe(false);
 });
@@ -70,7 +74,7 @@ test("finish is available inside individual questions and no answer is implicitl
 test("UI allows arbitrarily many questions and answers before review", async () => {
   const actions = Array.from({ length: 120 }, () => ["1. Which focus?", "2. Deployment"]).flat();
   const ctx = ui([...actions, "Finish clarification and review prompt", "Approve and send"]);
-  expect(await reviewClarification(ctx, request)).toBe("Compare the databases\n\n- Deployment");
+  expect(await reviewClarification(ctx, request)).toBe("Compare the databases\n\n- Which focus?: Deployment");
   expect(ctx.ui.select).toHaveBeenCalledTimes(242);
 });
 
@@ -129,4 +133,30 @@ test("early review reuses only applicable confirmed conversation decisions and l
   expect(result).not.toContain("Performance");
   expect(result).not.toContain("Unapproved");
   expect(result).not.toContain("Unrelated");
+});
+
+test("review separates unresolved questions from the draft and excludes unapproved choices", async () => {
+  const ctx = ui(["Finish clarification and review prompt", "Approve and send"]);
+  expect(await reviewClarification(ctx, request)).toBe(request.check.original_prompt);
+  const title = ctx.ui.select.mock.calls[1][0] as string;
+  const [draft, unresolved] = title.split("Unresolved options (not included in the prompt):");
+  expect(draft).not.toContain("Which focus?");
+  expect(unresolved).toContain("Which focus?");
+  expect(title).not.toContain("Performance");
+});
+
+test("early finish combines applicable decisions and explicit answers while leaving other options unresolved", async () => {
+  const other = { ...request.check.missing_options[0], id: "format", question: "Which format?" };
+  const ctx = ui(["1. Which focus?", "2. Deployment", "Finish clarification and review prompt", "Approve and send"]);
+  const result = await reviewClarification(ctx, { check: { ...request.check,
+    missing_options: [...request.check.missing_options, other],
+    recommended_combination: [...request.check.recommended_combination, { option_id: "format", choice_id: "performance" }],
+    option_resolutions: [{ id: "scope", applies_to_request: true, confirmed: true, value: "Existing project",
+      evidence: { message_index: 0, quote: "Performance" } }],
+  } });
+  expect(result).toBe("Compare the databases\n\n- scope: Existing project\n- Which focus?: Deployment");
+  const unresolved = (ctx.ui.select.mock.calls[3][0] as string).split("Unresolved options (not included in the prompt):")[1];
+  expect(unresolved).toContain("Which format?");
+  expect(unresolved).not.toContain("Which focus?");
+  expect(result).not.toContain("Performance");
 });

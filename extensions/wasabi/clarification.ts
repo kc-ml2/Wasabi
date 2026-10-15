@@ -12,8 +12,18 @@ export type ClarificationAction =
 /** Private per-input state. Only forward()'s claimed prompt crosses the input boundary. */
 export class WasabiClarification {
   readonly clarification_history: { question: string; answer: string }[] = [];
-  final_prompt: string | undefined;
-  approved = false;
+  private draft: string | undefined;
+  prompt_revision = 0;
+  approved_revision: number | null = null;
+  get final_prompt(): string | undefined { return this.draft; }
+  set final_prompt(text: string | undefined) {
+    this.draft = text;
+    this.prompt_revision++;
+    this.approved_revision = null;
+  }
+  get approved(): boolean {
+    return !!this.final_prompt?.trim() && this.approved_revision === this.prompt_revision;
+  }
   forwarded = false;
   interaction_state: "clarifying" | "reviewing" | "forwarding" | "cancelled" = "clarifying";
 
@@ -43,20 +53,20 @@ export function applyClarificationActions(
         // Only explicit answers are included, never unconfirmed recommendations.
         {
           const decisions = [...state.applicable_decisions, ...new Map(state.clarification_history.map(item =>
-            [item.question, item.answer])).values()];
+            [item.question, `${item.question}: ${item.answer}`])).values()];
           state.final_prompt = state.original_prompt + (decisions.length
             ? `\n\n${decisions.map(answer => `- ${answer}`).join("\n")}` : "");
         }
-        state.approved = false;
         state.interaction_state = "reviewing";
         break;
       case "edit":
         if (state.interaction_state !== "reviewing") break;
         state.final_prompt = action.text;
-        state.approved = false;
         break;
       case "approve":
-        if (state.interaction_state === "reviewing" && state.final_prompt?.trim()) state.approved = true;
+        if (state.interaction_state === "reviewing" && state.final_prompt?.trim()) {
+          state.approved_revision = state.prompt_revision;
+        }
         break;
       case "forward":
         if (state.interaction_state !== "reviewing" || !state.approved || !state.final_prompt?.trim()) break;
@@ -65,7 +75,7 @@ export function applyClarificationActions(
         forwardedPrompt = state.final_prompt;
         break;
       case "cancel":
-        state.approved = false;
+        state.approved_revision = null;
         state.interaction_state = "cancelled";
         break;
     }
@@ -122,7 +132,16 @@ export async function reviewClarification(ctx: ExtensionContext, request: Checke
     }
   }
   while (state.interaction_state === "reviewing") {
-    const action = await ctx.ui.select(`Wasabi · Review final prompt\n\n${state.final_prompt}`, [
+    const answered = new Set(state.clarification_history.map(item => item.question));
+    const unresolved = [
+      ...options.filter(option => !answered.has(option.question)).map(option => option.question),
+      ...(request.check.option_resolutions ?? []).filter(item => item.applies_to_request && !item.confirmed)
+        .map(item => item.id),
+    ];
+    const unresolvedDetails = startReview
+      ? "Checking ended before options were assessed. Review applicable prior decisions and any remaining choices."
+      : unresolved.length ? unresolved.map(question => `- ${question}`).join("\n") : "None identified.";
+    const action = await ctx.ui.select(`Wasabi · Review final prompt\n\n${state.final_prompt}\n\nUnresolved options (not included in the prompt):\n${unresolvedDetails}`, [
       "Approve and send", "Edit final prompt", cancel,
     ]);
     if (action === "Approve and send") return state.apply([{ type: "approve" }, { type: "forward" }]);

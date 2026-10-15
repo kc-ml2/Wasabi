@@ -70,9 +70,15 @@ Choose **Finish clarification and review prompt** at any question to review earl
 unconfirmed recommendations are excluded. Closing an answer editor returns to
 the controls. Closing a selection dialog or choosing **Cancel request** sends nothing.
 
-The review displays the original request plus explicitly supplied decisions.
+The review displays the original request plus applicable confirmed conversation
+decisions and explicitly supplied answers, with each answer tied to its question.
+Unresolved questions appear separately and are never silently filled from
+recommendations. If checking is ended before a result exists, review explicitly
+marks the options as unassessed rather than claiming nothing is missing.
 **Edit final prompt** opens Pi's editor and returns to review; editing removes any
-previous approval. **Approve and send** approves the currently displayed text and
+previous approval. Each draft generation or edit increments `prompt_revision`;
+approval records `approved_revision`, which must match before forwarding.
+**Approve and send** approves the currently displayed text and
 passes it to Pi as the transformed input exactly once. Empty drafts cannot be sent.
 Recommendation confirmation alone never approves the final prompt. Clarification
 questions, answers, and review history stay in memory and are never appended to

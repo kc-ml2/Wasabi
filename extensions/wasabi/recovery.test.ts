@@ -239,3 +239,54 @@ test("synchronous provider failure revokes the call and preserves structured rec
   expect(state.failure).toMatchObject({ kind: "error", request_id: state.request_id,
     call_generation: active!.call_generation, message: "Synchronous failure" });
 });
+
+test("finish without a model draft holds input through editing and approves only the current revision", async () => {
+  jest.useFakeTimers();
+  let late!: (value: any) => void;
+  let review!: (action: string) => void;
+  const invoke = jest.fn<any>(() => new Promise(resolve => { late = resolve; }));
+  const h = harness([], invoke);
+  h.ctx.ui.editor = jest.fn<any>(async () => "Edited and approved by user");
+  h.ctx.ui.select.mockResolvedValueOnce("Finish clarification and review prompt")
+    .mockImplementationOnce(() => new Promise(resolve => { review = resolve; }))
+    .mockResolvedValueOnce("Approve and send");
+  await h.commands["wasabi-model"].handler("p/light", h.ctx);
+  let settled = false;
+  const input = h.handlers.input({ source: "interactive", text: "Exact original" }, h.ctx)
+    .then((result: any) => { settled = true; return result; });
+  await jest.advanceTimersByTimeAsync(200);
+  expect(settled).toBe(false);
+  expect((invoke.mock.calls[0][2] as any).signal.aborted).toBe(true);
+  expect(h.ctx.ui.select.mock.calls[1][0]).toContain("Exact original");
+  expect(h.ctx.ui.select.mock.calls[1][0]).toContain("Checking ended before options were assessed");
+  late(response);
+  await jest.advanceTimersByTimeAsync(0);
+  expect(settled).toBe(false);
+  expect(h.ctx.ui.select).toHaveBeenCalledTimes(2);
+  review("Edit final prompt");
+  expect(await input).toEqual({ action: "transform", text: "Edited and approved by user", images: undefined });
+  expect(h.ctx.ui.select.mock.calls[2][0]).toContain("Edited and approved by user");
+  expect(invoke).toHaveBeenCalledTimes(1);
+  expect(h.ctx.ui.setStatus).toHaveBeenLastCalledWith("wasabi", undefined);
+});
+
+test("finish revokes a clarifying call before cancellation completes", async () => {
+  jest.useFakeTimers();
+  const state = new WasabiRequest("Original without a draft");
+  const ctx: any = { hasUI: true, ui: { select: async () => "Finish clarification and review prompt" } };
+  let late!: (value: string) => void;
+  const pending = state.call(ctx, () => new Promise<string>(resolve => { late = resolve; }), CALL_TIMEOUT_MS, "clarifying");
+  const rejected = expect(pending).rejects.toThrow("clarification finished");
+  const active = state.active_call!;
+  await jest.advanceTimersByTimeAsync(200);
+  await rejected;
+  expect(state.active_call).toBeNull();
+  expect(active.controller.signal.aborted).toBe(true);
+  expect(state.call_generation).toBeGreaterThan(active.call_generation);
+  expect(state.interaction_state).toBe("reviewing");
+  expect(state.forwarded).toBe(false);
+  late("Unapproved model draft");
+  await Promise.resolve();
+  expect(state.interaction_state).toBe("reviewing");
+  expect(state.failure).toBeUndefined();
+});
