@@ -1,5 +1,36 @@
 # Wasabi validation record
 
+## AC 1: conversation-only checking and settled versus missing options
+
+Revalidated on 2026-10-15 with `npm run check`: TypeScript and all
+11 suites / 222 tests passed. `git diff --check` passed. No production
+change was needed for this criterion.
+
+Added coding and research input-handler scenarios with an omitted but settled
+option, a genuinely undecided option supported by an assistant proposal, and an
+unrelated prior decision. Only the undecided option is offered as a question.
+The user chooses the nonrecommended alternative, finishes clarification, then
+approves the prompt containing the applicable prior decision and explicit answer.
+The unrelated decision and unapproved recommendation are excluded. Both tests
+verify one provider call, conversation-only input fields, no model tools, and no
+private clarification persisted or sent as session messages. The fixture rejects
+access to the working directory. An initial check run was stopped because the
+new UI mock kept revisiting its question; the mock now explicitly finishes after
+answering, and the complete rerun passed.
+
+Existing tests separately cover fully settled requests without clarification,
+every interactive/RPC input while enabled, empty conversations, malformed or
+ungrounded evidence, conflicting confirmed/missing options, assistant proposals,
+and recommendations left unconfirmed. The checker prompt explicitly requires
+considering both current input and prior conversation, current-input precedence,
+and concrete questions even when intent can be inferred.
+
+These are mocked provider/Pi contract tests. They verify data flow, validation,
+and user controls, not a real model's semantic accuracy. Live Pi, real-model calls,
+and the independent acceptance harness were not executed in this run.
+The pre-existing `.ouroboros/context_pack.json` change and `src/.README.md.swp`
+were preserved and excluded from the commit.
+
 ## AC 7: recovery revalidation and authoritative gate evidence
 
 Revalidated commit `81120c8` on 2026-10-15 with Node v25.8.1 and npm 11.11.0.

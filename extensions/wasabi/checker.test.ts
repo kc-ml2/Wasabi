@@ -289,6 +289,74 @@ test("assistant proposals cannot serve as user confirmation evidence", () => {
     conversation)).not.toThrow();
 });
 
+test.each([
+  { kind: "coding", original: "Implement the exporter", settledId: "language", settledValue: "TypeScript",
+    decision: "Use TypeScript for the exporter.", option: "format", question: "Which export format is required?",
+    proposal: "The exporter could produce JSON Lines or CSV.", choices: ["JSON Lines", "CSV"] },
+  { kind: "research", original: "Research the database options", settledId: "scope", settledValue: "Deployment",
+    decision: "Focus this database research on deployment.", option: "audience", question: "Who will use the research?",
+    proposal: "The research could address operators or application developers.", choices: ["operators", "application developers"] },
+])("$kind reuses a settled omission and privately confirms only the genuinely undecided option", async scenario => {
+  const proof = { message_index: 0, quote: scenario.decision };
+  const result = {
+    option_resolutions: [
+      { id: scenario.settledId, applies_to_request: true, confirmed: true, value: scenario.settledValue, evidence: proof },
+      { id: "unrelated", applies_to_request: false, confirmed: true, value: "French",
+        evidence: { message_index: 2, quote: "For a different report, use French." } },
+    ],
+    missing_options: [{ id: scenario.option, question: scenario.question,
+      evidence: { message_index: 1, quote: scenario.proposal },
+      available_choices: scenario.choices.map((label, index) => ({ id: String(index), label,
+        evidence: { message_index: 1, quote: label } })) }],
+    recommended_combination: [{ option_id: scenario.option, choice_id: "0" }],
+  };
+  const h = harness(result);
+  h.entries.splice(0, h.entries.length,
+    { type: "message", message: { role: "user", content: scenario.decision } },
+    { type: "message", message: { role: "assistant", content: [{ type: "text", text: scenario.proposal }] } },
+    { type: "message", message: { role: "user", content: "For a different report, use French." } },
+  );
+  wasabi(h.pi, h.complete);
+  await h.commands["wasabi-model"].handler("p/light", h.ctx);
+  const before = [...h.entries];
+  let answered = false;
+  h.ctx.ui.select.mockImplementation(async (title: string, actions: string[]) => {
+    if (title.startsWith("Wasabi · Review final prompt")) {
+      expect(title).toContain(`${scenario.settledId}: ${scenario.settledValue}`);
+      expect(title).toContain(`${scenario.option}: ${scenario.choices[1]}`);
+      expect(title).not.toContain(`${scenario.option}: ${scenario.choices[0]}`);
+      expect(title).not.toContain("unrelated: French");
+      return "Approve and send";
+    }
+    if (actions.includes(`1. ${scenario.question}`)) {
+      // Reuse the omitted decision without offering it as another question.
+      expect(actions.filter(action => /^\d+\./.test(action))).toEqual([`1. ${scenario.question}`]);
+      expect(title).toContain(`${scenario.choices[0]} (recommended)`);
+      expect(title).toContain(scenario.proposal);
+      return answered ? "Finish clarification and review prompt" : `1. ${scenario.question}`;
+    }
+    answered = true;
+    return `2. ${scenario.choices[1]}`;
+  });
+  expect(await h.events.input({ source: "interactive", text: scenario.original }, h.ctx)).toEqual({
+    action: "transform",
+    text: `${scenario.original}\n\n- ${scenario.settledId}: ${scenario.settledValue}\n- ${scenario.option}: ${scenario.choices[1]}`,
+  });
+  const payload = h.complete.mock.calls[0][1] as any;
+  expect(Object.keys(JSON.parse(payload.messages[0].content)).sort()).toEqual([
+    "conversation_context", "information_sources", "original_prompt",
+  ]);
+  expect(JSON.parse(payload.messages[0].content).conversation_context).toEqual([
+    { role: "user", text: scenario.decision }, { role: "assistant", text: scenario.proposal },
+    { role: "user", text: "For a different report, use French." },
+  ]);
+  expect(payload.tools).toBeUndefined();
+  expect(h.complete).toHaveBeenCalledTimes(1);
+  expect(h.entries).toEqual(before);
+  expect(h.pi.sendUserMessage).not.toHaveBeenCalled();
+  expect(h.pi.sendMessage).not.toHaveBeenCalled();
+});
+
 
 test("interruption fallback preserves explicit language with current-input precedence and exact user evidence", () => {
   const prior = [{ role: "user" as const, text: "Please answer in Korean." },
