@@ -380,6 +380,80 @@ test("current input grounds questions on the first turn without filesystem infor
   expect(() => parseCheckResponse(JSON.stringify(result), [], "Unrelated input")).toThrow();
 });
 
+test.each([
+  { original: "Build a task manager.", id: "interface", question: "How should people use the task manager?",
+    labels: ["Command-line interface", "Web application"] },
+  { original: "Research caching.", id: "objective", question: "What should the caching research help you decide?",
+    labels: ["Choose an application caching strategy", "Understand CPU cache behavior"] },
+])("$original supports generated proposals without user-supplied alternatives", async scenario => {
+  const result = { missing_options: [{ id: scenario.id, question: scenario.question,
+    evidence: { message_index: -1, quote: scenario.original },
+    available_choices: scenario.labels.map((label, i) => ({ id: String(i), label })),
+  }], recommended_combination: [{ option_id: scenario.id, choice_id: "0" }] };
+  const h = harness(result);
+  h.entries.length = 0;
+  wasabi(h.pi, h.complete);
+  await h.commands["wasabi-model"].handler("p/light", h.ctx);
+  const before = [...h.entries];
+  let showed!: () => void;
+  const shown = new Promise<void>(resolve => { showed = resolve; });
+  let approve!: (action: string) => void;
+  h.ctx.ui.select.mockResolvedValueOnce(`1. ${scenario.question}`)
+    .mockResolvedValueOnce(`2. ${scenario.labels[1]}`)
+    .mockResolvedValueOnce("Finish clarification and review prompt")
+    .mockImplementationOnce(() => new Promise(resolve => { approve = resolve; showed(); }));
+  let forwarded = false;
+  const pending = h.events.input({ source: "interactive", text: scenario.original }, h.ctx)
+    .then((value: any) => { forwarded = true; return value; });
+  await shown;
+  const controls = h.ctx.ui.select.mock.calls[0][0];
+  expect(controls).toContain(scenario.question);
+  expect(controls).toContain("Suggested choices (not confirmed)");
+  expect(controls).toContain(scenario.labels[0]);
+  expect(controls).toContain(scenario.labels[1]);
+  expect(controls.split("Current prompt draft")[1]).not.toContain(scenario.labels[0]);
+  const review = h.ctx.ui.select.mock.calls[3][0];
+  expect(review).toContain(`${scenario.id}: ${scenario.labels[1]}`);
+  expect(review).not.toContain(scenario.labels[0]);
+  expect(forwarded).toBe(false);
+  expect(h.entries).toEqual(before);
+  expect(h.pi.sendUserMessage).not.toHaveBeenCalled();
+  const payload = h.complete.mock.calls[0][1] as any;
+  expect(JSON.parse(payload.messages[0].content).original_prompt).toBe(scenario.original);
+  expect(payload.systemPrompt).toContain("Detect ambiguity even when the user gives no options");
+  expect(payload.systemPrompt).toContain("Choice evidence is optional");
+  approve("Approve and send");
+  expect(await pending).toEqual({ action: "transform",
+    text: `${scenario.original}\n\n- ${scenario.id}: ${scenario.labels[1]}` });
+  expect(h.entries).toEqual(before);
+});
+
+test("generated proposals still require question evidence, distinct choices and valid recommendations", () => {
+  const result = { missing_options: [{ id: "interface", question: "Which interface?",
+    evidence: { message_index: -1, quote: "Build a task manager" },
+    available_choices: [{ id: "cli", label: "Command line" }, { id: "web", label: "Web app" }],
+  }], recommended_combination: [{ option_id: "interface", choice_id: "cli" }] };
+  expect(() => parseCheckResponse(JSON.stringify(result), [], "Build a task manager")).not.toThrow();
+  expect(() => parseCheckResponse(JSON.stringify(result), [], "Unrelated request")).toThrow("not in the conversation");
+  const duplicate = structuredClone(result);
+  duplicate.missing_options[0].available_choices[1].label = "Command line";
+  expect(() => parseCheckResponse(JSON.stringify(duplicate), [], "Build a task manager")).toThrow("distinct");
+  const inventedEvidence = { ...result, option_resolutions: [{ id: "language", applies_to_request: true,
+    confirmed: true, value: "TypeScript" }] };
+  expect(() => parseCheckResponse(JSON.stringify(inventedEvidence), [], "Build a task manager")).toThrow();
+});
+
+test("sufficient and delegated requests can proceed without compulsory clarification", async () => {
+  const h = harness(clear);
+  h.entries.length = 0;
+  wasabi(h.pi, h.complete);
+  await h.commands["wasabi-model"].handler("p/light", h.ctx);
+  const original = "Write a Python function is_even(n: int) -> bool. Choose the implementation yourself.";
+  expect(await h.events.input({ source: "interactive", text: original }, h.ctx)).toEqual({ action: "continue" });
+  expect(h.ctx.ui.select).not.toHaveBeenCalled();
+  expect((h.complete.mock.calls[0][1] as any).systemPrompt).toContain("user explicitly delegates a choice");
+});
+
 test("resolution evidence must be grounded and a confirmed option cannot also require confirmation", () => {
   const resolution = { id: "focus", applies_to_request: true, confirmed: true, value: "Performance",
     evidence: { message_index: -1, quote: "Performance" } };

@@ -120,7 +120,7 @@ export async function reviewClarification(ctx: ExtensionContext, request: Checke
       const answer = currentAnswer(option.question);
       if (answer !== undefined) return `${option.question}\nConfirmed answer: ${answer}`;
       const recommended = request.check.recommended_combination.find(item => item.option_id === option.id);
-      return `${option.question}\nNot answered\nConversation: ${option.evidence.quote}\n${option.available_choices.map(choice =>
+      return `${option.question}\nNot answered\nConversation: ${option.evidence.quote}\nSuggested choices (not confirmed):\n${option.available_choices.map(choice =>
         `- ${choice.label}${choice.id === recommended?.choice_id ? " (recommended)" : ""}`).join("\n")}`;
     }).join("\n\n");
     const questions = options.map((option, index) => `${index + 1}. ${option.question}`);

@@ -58,8 +58,17 @@ exact evidence quote. Confirmed applicable resolutions are included in review
 without asking again; an option cannot be both confirmed and missing.
 Evidence uses a zero-based conversation index, or -1 for the current input, so
 first-turn requests can also receive concrete proposed alternatives.
-Each option includes a concrete question, distinct choices, and exact supporting
-quotes from the current input or conversation. Invalid evidence or incomplete recommendations are rejected.
+Users need not list alternatives: for example, **Build a task manager** can prompt
+questions about intended users or interface, and **Research caching** can prompt
+questions about research objective or scope. The model identifies ambiguities
+whose answers materially change the result, considering prior decisions and
+explicitly delegated choices rather than asking about every omitted detail.
+Each question includes an exact quote identifying the ambiguous part of the
+request. Choices may be new proposals generated from task knowledge; their labels
+need not occur in the conversation. They are shown as **Suggested choices (not
+confirmed)**. Optional choice evidence, when supplied, must be an exact quote;
+evidence for existing decisions remains mandatory. Invalid evidence or incomplete
+recommendations are rejected.
 Wasabi shows all choices and a recommended combination. The user must explicitly
 confirm that combination or choose alternatives; dismissing the dialog confirms
 nothing. These decisions are kept privately in the checker, never appended to the
