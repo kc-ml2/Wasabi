@@ -62,7 +62,7 @@ package.json
 
 - Use `index.ts` as the Pi entry point. Keep feature-specific helpers and supporting files inside the same directory; a small extension may keep its implementation in `index.ts`.
 - Register each entry point separately in the root `package.json` under `pi.extensions`, for example `"./extensions/crop/index.ts"`, so users can enable or disable sub-extensions individually through `pi config`.
-- Keep behavioral tests alongside the implementation. When adding or moving tests, update Jest discovery and TypeScript configuration as needed so `npm run check` covers them. The current Jest configuration only discovers tests under the root `test/` directory.
+- Keep behavioral tests alongside the implementation. When adding or moving tests, update Jest discovery and TypeScript configuration as needed so `npm run check` covers them. Jest currently discovers tests under both `test/` and `extensions/`, and TypeScript checks both directories.
 - Give each sub-extension a `README.md` describing its purpose, commands, configuration, usage, and limitations as applicable. Keep package installation and an overview with links to these READMEs in the root `README.md`.
 - Keep sub-extensions self-contained. Extract shared code only when multiple sub-extensions need it, and document the shared boundary without coupling one sub-extension to another's internal implementation.
 

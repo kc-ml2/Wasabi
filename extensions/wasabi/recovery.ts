@@ -27,7 +27,11 @@ export class WasabiRequest {
   active_call: ActiveCall | null = null;
   failure: (Error & { kind: FailureKind; request_id: string; call_generation: number }) | undefined;
 
-  constructor(readonly original_prompt: string) {}
+  readonly original_prompt: string;
+
+  constructor(original_prompt: string) {
+    this.original_prompt = original_prompt;
+  }
 
   invalidate(): void {
     const obsolete = this.active_call;

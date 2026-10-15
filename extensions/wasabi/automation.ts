@@ -10,10 +10,13 @@ export class WasabiAutomation {
   activation_pending = false;
   initial_setup_completed = false;
 
-  constructor(
-    private readonly pi: Pick<ExtensionAPI, "appendEntry">,
-    private readonly model: WasabiModel,
-  ) {}
+  private readonly pi: Pick<ExtensionAPI, "appendEntry">;
+  private readonly model: WasabiModel;
+
+  constructor(pi: Pick<ExtensionAPI, "appendEntry">, model: WasabiModel) {
+    this.pi = pi;
+    this.model = model;
+  }
 
   get enabled(): boolean {
     return this.preference === true && this.model.selectedKey !== undefined;

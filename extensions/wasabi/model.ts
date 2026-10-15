@@ -11,11 +11,19 @@ export class WasabiModel {
   private selectionGeneration = 0;
   private leaveSelection: (() => void) | undefined;
 
+  private readonly pi: Pick<ExtensionAPI, "appendEntry">;
+  private readonly invoke: typeof complete;
+  private readonly indicator: WasabiIndicator;
+
   constructor(
-    private readonly pi: Pick<ExtensionAPI, "appendEntry">,
-    private readonly invoke: typeof complete = complete,
-    private readonly indicator = new WasabiIndicator(),
-  ) {}
+    pi: Pick<ExtensionAPI, "appendEntry">,
+    invoke: typeof complete = complete,
+    indicator = new WasabiIndicator(),
+  ) {
+    this.pi = pi;
+    this.invoke = invoke;
+    this.indicator = indicator;
+  }
 
   get selectedKey(): string | undefined { return this.key; }
 

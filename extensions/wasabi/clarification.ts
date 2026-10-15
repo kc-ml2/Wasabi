@@ -27,7 +27,13 @@ export class WasabiClarification {
   forwarded = false;
   interaction_state: "clarifying" | "reviewing" | "forwarding" | "cancelled" = "clarifying";
 
-  constructor(readonly original_prompt: string, readonly applicable_decisions: string[] = []) {}
+  readonly original_prompt: string;
+  readonly applicable_decisions: string[];
+
+  constructor(original_prompt: string, applicable_decisions: string[] = []) {
+    this.original_prompt = original_prompt;
+    this.applicable_decisions = applicable_decisions;
+  }
 
   /** Apply ordered user actions; return a prompt only for the first approved forward. */
   apply(actions: ClarificationAction[]): string | undefined {

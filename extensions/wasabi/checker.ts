@@ -206,7 +206,11 @@ export function parseCheckResponse(raw: string, conversation: ConversationMessag
 export class WasabiChecker {
   pending: CheckedRequest | undefined;
 
-  constructor(private readonly model: Pick<WasabiModel, "complete">) {}
+  private readonly model: Pick<WasabiModel, "complete">;
+
+  constructor(model: Pick<WasabiModel, "complete">) {
+    this.model = model;
+  }
 
   async check(ctx: ExtensionContext, original_prompt: string, signal?: AbortSignal): Promise<CheckedRequest> {
     const sources = [conversationSource];

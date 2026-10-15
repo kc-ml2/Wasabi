@@ -132,3 +132,15 @@ call records its request ID, generation, kind, deadline, and cancellation contro
 only responses matching that call and its permitted state are accepted. A request
 claims forwarding only once, before returning its approved input to Pi. Authentication finishing
 after cancellation cannot start an obsolete provider call.
+
+## Development checks
+
+Run `npm run check` from the package root for TypeScript and all colocated Jest
+tests. `package.test.ts` also loads and registers the entry point in a fresh Node
+process without a transpiler, matching the independent check package's native
+TypeScript loading path. Keep runtime syntax erasable by Node; constructor
+parameter properties require transformation and fail in that path.
+
+Run `npm pack --dry-run --json` to inspect package contents. Live Pi interaction
+and provider calls require separate manual validation; mocked tests and package
+loading do not establish that those checks passed.
