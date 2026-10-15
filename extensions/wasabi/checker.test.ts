@@ -209,6 +209,52 @@ test("fully settled omitted options do not open clarification dialogs", async ()
   expect(h.ctx.ui.select).not.toHaveBeenCalled();
 });
 
+test.each([
+  ["Confirm recommended combination", "Compare them\n\n- format: Short summary\n- focus: Performance"],
+  ["Finish clarification and review prompt", "Compare them\n\n- format: Short summary"],
+])("input review reuses settled omissions and includes recommendations only after %s", async (action, finalPrompt) => {
+  const settled = { id: "format", applies_to_request: true, confirmed: true, value: "Short summary",
+    evidence: { message_index: 2, quote: "Use a short summary for this comparison" } };
+  const h = harness({ ...missing(), option_resolutions: [settled] });
+  h.entries.push({ type: "message", message: { role: "user", content: settled.evidence.quote } });
+  wasabi(h.pi, h.complete);
+  await h.commands["wasabi-model"].handler("p/light", h.ctx);
+  const before = [...h.entries];
+  let approve!: (value: string) => void;
+  let showReview!: () => void;
+  const reviewShown = new Promise<void>(resolve => { showReview = resolve; });
+  h.ctx.ui.select.mockResolvedValueOnce(action)
+    .mockImplementationOnce(() => new Promise(resolve => { approve = resolve; showReview(); }));
+
+  const input = h.events.input({ source: "interactive", text: "Compare them" }, h.ctx);
+  // Wait until final review is displayed, leaving its approval unresolved.
+  await reviewShown;
+  expect(h.ctx.ui.select).toHaveBeenCalledTimes(2);
+  const [questions, actions] = h.ctx.ui.select.mock.calls[0];
+  expect(questions).toContain("Performance (recommended)");
+  expect(questions).toContain("Deployment");
+  expect(actions).toContain("1. Should the comparison focus on performance or deployment?");
+  expect(actions).not.toContain(expect.stringContaining("format"));
+  const review = h.ctx.ui.select.mock.calls[1][0] as string;
+  const [draft, unresolved] = review.split("Unresolved options (not included in the prompt):");
+  expect(draft).toContain(finalPrompt);
+  expect(draft).toContain("format: Short summary");
+  if (action === "Finish clarification and review prompt") {
+    expect(draft).not.toContain("focus: Performance");
+    expect(unresolved).toContain(missing().missing_options[0].question);
+  } else {
+    expect(unresolved).toContain("None identified.");
+  }
+  expect(h.entries).toEqual(before);
+  expect(h.pi.sendUserMessage).not.toHaveBeenCalled();
+  expect(h.pi.sendMessage).not.toHaveBeenCalled();
+
+  approve("Approve and send");
+  expect(await input).toEqual({ action: "transform", text: finalPrompt });
+  expect(h.complete).toHaveBeenCalledTimes(1);
+  expect(h.entries).toEqual(before);
+});
+
 test("current input grounds questions on the first turn without filesystem information", async () => {
   const h = harness(missing());
   h.entries.length = 0;
