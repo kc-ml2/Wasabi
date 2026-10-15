@@ -17,7 +17,7 @@ export class WasabiClarification {
   forwarded = false;
   interaction_state: "clarifying" | "reviewing" | "forwarding" | "cancelled" = "clarifying";
 
-  constructor(readonly original_prompt: string) {}
+  constructor(readonly original_prompt: string, readonly applicable_decisions: string[] = []) {}
 
   /** Apply ordered user actions; return a prompt only for the first approved forward. */
   apply(actions: ClarificationAction[]): string | undefined {
@@ -42,8 +42,8 @@ export function applyClarificationActions(
         if (state.interaction_state !== "clarifying") break;
         // Only explicit answers are included, never unconfirmed recommendations.
         {
-          const decisions = Array.from(new Map(state.clarification_history.map(item =>
-            [item.question, item.answer])).values());
+          const decisions = [...state.applicable_decisions, ...new Map(state.clarification_history.map(item =>
+            [item.question, item.answer])).values()];
           state.final_prompt = state.original_prompt + (decisions.length
             ? `\n\n${decisions.map(answer => `- ${answer}`).join("\n")}` : "");
         }
@@ -76,7 +76,9 @@ export function applyClarificationActions(
 /** Local UI only: questions and answers never become Pi session messages. */
 export async function reviewClarification(ctx: ExtensionContext, request: CheckedRequest, startReview = false): Promise<string | undefined> {
   if (!ctx.hasUI) return undefined;
-  const state = new WasabiClarification(request.check.original_prompt);
+  const state = new WasabiClarification(request.check.original_prompt,
+    (request.check.option_resolutions ?? []).filter(item => item.applies_to_request && item.confirmed)
+      .map(item => `${item.id}: ${item.value}`));
   if (startReview) state.apply([{ type: "finish" }]);
   const options = request.check.missing_options;
   const finish = "Finish clarification and review prompt";

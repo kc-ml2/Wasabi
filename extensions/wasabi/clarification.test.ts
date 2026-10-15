@@ -114,3 +114,19 @@ test("functional action entry point uses the same approval and single-forwarding
   expect(applyClarificationActions([{ type: "finish" }, { type: "edit", text: "Standalone draft" },
     { type: "approve" }, { type: "forward" }])).toBe("Standalone draft");
 });
+
+test("early review reuses only applicable confirmed conversation decisions and leaves recommendations unconfirmed", async () => {
+  const ctx = ui(["Finish clarification and review prompt", "Approve and send"]);
+  const result = await reviewClarification(ctx, { check: { ...request.check, option_resolutions: [
+    { id: "format", applies_to_request: true, confirmed: true, value: "Short summary",
+      evidence: { message_index: 0, quote: "Performance" } },
+    { id: "suggestion", applies_to_request: true, confirmed: false, value: "Unapproved suggestion",
+      evidence: { message_index: 0, quote: "Performance" } },
+    { id: "unrelated", applies_to_request: false, confirmed: true, value: "Unrelated decision",
+      evidence: { message_index: 0, quote: "Performance" } },
+  ] } });
+  expect(result).toBe("Compare the databases\n\n- format: Short summary");
+  expect(result).not.toContain("Performance");
+  expect(result).not.toContain("Unapproved");
+  expect(result).not.toContain("Unrelated");
+});

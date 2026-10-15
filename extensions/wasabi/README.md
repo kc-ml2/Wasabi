@@ -45,10 +45,17 @@ again. No local files are read, no tools are supplied, and tool results, thinkin
 tool calls, and configuration entries are excluded. `InformationSource` provides
 the boundary for future sources; v1 registers only `conversationSource`.
 
-The checker asks for missing adjustable options even when the overall intent is
-clear, while respecting choices already settled in the conversation or request.
+The checker asks about required options that remain undecided even when the
+intent can be inferred. It reuses applicable decisions from the conversation when
+the current input omits them; current explicit decisions override older ones.
+Unrelated prior decisions and assistant suggestions do not establish user choices.
+Grounded `option_resolutions` record applicability, confirmation, value, and an
+exact evidence quote. Confirmed applicable resolutions are included in review
+without asking again; an option cannot be both confirmed and missing.
+Evidence uses a zero-based conversation index, or -1 for the current input, so
+first-turn requests can also receive concrete proposed alternatives.
 Each option includes a concrete question, distinct choices, and exact supporting
-conversation quotes. Invalid evidence or incomplete recommendations are rejected.
+quotes from the current input or conversation. Invalid evidence or incomplete recommendations are rejected.
 Wasabi shows all choices and a recommended combination. The user must explicitly
 confirm that combination or choose alternatives; dismissing the dialog confirms
 nothing. These decisions are kept privately in the checker, never appended to the

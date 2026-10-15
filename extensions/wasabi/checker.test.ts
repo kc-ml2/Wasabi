@@ -180,3 +180,65 @@ test("headless requests and malformed checker replies never become implicit conf
   expect(await h.events.input({ source: "rpc", text: "Compare them" }, h.ctx)).toEqual({ action: "handled" });
   expect(h.ctx.ui.notify).toHaveBeenCalledWith(expect.stringContaining("Original request not sent"), "error");
 });
+
+test("omitted applicable decisions are retained without reconfirmation; unresolved options stay proposals", async () => {
+  const settled = { id: "format", applies_to_request: true, confirmed: true, value: "Short summary",
+    evidence: { message_index: 2, quote: "Use a short summary for this comparison" } };
+  const h = harness({ ...missing(), option_resolutions: [settled] });
+  h.entries.push({ type: "message", message: { role: "user", content: settled.evidence.quote } });
+  const request = await h.checker.check(h.ctx, "Compare them");
+  expect(request.check.option_resolutions).toEqual([settled]);
+  expect(request.check.missing_options.map(option => option.id)).toEqual(["focus"]);
+  expect(request.confirmed_combination).toBeUndefined();
+  const payload = JSON.parse((h.complete.mock.calls[0][1] as any).messages[0].content);
+  expect(payload.original_prompt).toBe("Compare them");
+  expect(payload.conversation_context[2].text).toBe(settled.evidence.quote);
+  expect(CHECK_SYSTEM_PROMPT).toContain("Reuse applicable prior user decisions");
+  expect(CHECK_SYSTEM_PROMPT).toContain("Assistant suggestions and inferred intent are not user confirmation");
+});
+
+test("fully settled omitted options do not open clarification dialogs", async () => {
+  const settled = { id: "focus", applies_to_request: true, confirmed: true, value: "Performance",
+    evidence: { message_index: 2, quote: "Focus on performance" } };
+  const h = harness({ ...clear, option_resolutions: [settled] });
+  h.entries.push({ type: "message", message: { role: "user", content: settled.evidence.quote } });
+  wasabi(h.pi, h.complete);
+  await h.commands["wasabi-model"].handler("p/light", h.ctx);
+  expect(await h.events.input({ source: "interactive", text: "Compare them" }, h.ctx)).toEqual({ action: "continue" });
+  expect(h.complete).toHaveBeenCalledTimes(1);
+  expect(h.ctx.ui.select).not.toHaveBeenCalled();
+});
+
+test("current input grounds questions on the first turn without filesystem information", async () => {
+  const h = harness(missing());
+  h.entries.length = 0;
+  const result = missing();
+  result.missing_options[0].evidence.message_index = -1;
+  for (const choice of result.missing_options[0].available_choices) choice.evidence.message_index = -1;
+  h.complete.mockResolvedValue({ stopReason: "stop", content: [{ type: "text", text: JSON.stringify(result) }] });
+  const request = await h.checker.check(h.ctx, "Compare performance or deployment");
+  expect(request.check.conversation_context).toEqual([]);
+  expect(request.check.missing_options).toEqual(result.missing_options);
+  expect(request.confirmed_combination).toBeUndefined();
+  expect(() => parseCheckResponse(JSON.stringify(result), [], "Unrelated input")).toThrow();
+});
+
+test("resolution evidence must be grounded and a confirmed option cannot also require confirmation", () => {
+  const resolution = { id: "focus", applies_to_request: true, confirmed: true, value: "Performance",
+    evidence: { message_index: -1, quote: "Performance" } };
+  expect(() => parseCheckResponse(JSON.stringify({ ...clear, option_resolutions: [resolution] }), conversation,
+    "Use Performance")).not.toThrow();
+  expect(() => parseCheckResponse(JSON.stringify({ ...clear, option_resolutions: [resolution] }), conversation,
+    "Compare them")).toThrow("not in the conversation");
+  expect(() => parseCheckResponse(JSON.stringify({ ...missing(), option_resolutions: [resolution] }), conversation,
+    "Use Performance")).toThrow("cannot ask again");
+});
+
+test("assistant proposals cannot serve as user confirmation evidence", () => {
+  const resolution = { id: "format", applies_to_request: true, confirmed: true, value: "Short summary",
+    evidence: { message_index: 1, quote: "short summary" } };
+  expect(() => parseCheckResponse(JSON.stringify({ ...clear, option_resolutions: [resolution] }), conversation))
+    .toThrow("explicit user evidence");
+  expect(() => parseCheckResponse(JSON.stringify({ ...clear, option_resolutions: [{ ...resolution, confirmed: false }] }),
+    conversation)).not.toThrow();
+});
