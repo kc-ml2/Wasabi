@@ -426,6 +426,11 @@ test.each([
   "The output format for this task is JSON Lines. This is decided.",
   "For this request, the deployment target is Cloud Run.",
   "This task's research scope is database performance.",
+  "We agreed on SQLite for storage for this task.",
+  "For this task, we have already settled on SQLite for storage.",
+  "We have already agreed that this task uses SQLite for storage.",
+  "The storage backend for this task has been confirmed as SQLite.",
+  "For this task, the storage backend is settled as SQLite.",
 ])("finish without a draft retains a settled option through private review and reapproval: %s", async prior => {
   jest.useFakeTimers();
   let late!: (value: any) => void;

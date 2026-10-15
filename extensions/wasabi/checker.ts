@@ -88,6 +88,20 @@ export function conversationDecisions(conversation: ConversationMessage[], origi
           evidence: { message_index: index === conversation.length ? -1 : index, quote: assertion } });
         continue;
       }
+      // A user can report a settled choice without issuing a "use" command.
+      // Preserve the assertion itself, rather than inferring or rewriting its
+      // value. This path must work even when the checker never replies.
+      const settled = assertion.match(/^(?:for this (?:task|request|conversation),?\s*)?(?:we|I)(?:['’]ve| have)?\s+(?:already\s+)?(?:decided|agreed|settled|chosen|selected|confirmed)\s+(?:on\s+|to\s+|that\s+)?(.+)$/iu);
+      const settledSubject = assertion.match(/^(?:the\s+)?([\p{L}\d -]+?)\s+for this (?:task|request|conversation)\s+(?:has been|is)\s+(?:already\s+)?(?:decided|agreed|settled|chosen|selected|confirmed)\s+(?:as|to be|on)\s+(.+)$/iu);
+      const uncertain = /\b(?:not|never|perhaps|propos\w*|suggest\w*|recommend\w*|tentative|undecided|unconfirmed|unknown|consider\w*|explor\w*|evaluat\w*|discuss\w*)\b|\b(?:another|different|other|previous|earlier)\s+(?:task|request|project|conversation)\b/iu.test(assertion);
+      if (!directive && (settled || settledSubject) && !uncertain) {
+        const target = settledSubject?.[1] ?? settled?.[1].match(/\bfor\s+(.+?)(?:\s+for this (?:task|request|conversation))?$/iu)?.[1];
+        const scope = target?.trim().toLowerCase();
+        const id = `instruction:${scope && !/^(?:this (?:task|request|project|conversation)|(?:the )?(?:implementation|code))$/u.test(scope) ? scope : "implementation"}`;
+        decisions.set(id, { id, applies_to_request: true, confirmed: true, value: assertion,
+          evidence: { message_index: index === conversation.length ? -1 : index, quote: assertion } });
+        continue;
+      }
       const value = response ?? directive?.[1];
       if (!value) continue;
       const scope = directive?.[1].match(/\s+for\s+(.+?)\s*$/iu)?.[1].toLowerCase();

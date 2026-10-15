@@ -453,3 +453,46 @@ test.each([
 ])("snapshot leaves proposed or unrelated implementation choices unassessed: %s", text => {
   expect(conversationDecisions([{ role: "user", text }], "Implement retry handling")).toEqual([]);
 });
+
+
+test.each([
+  "We agreed on SQLite for storage for this task.",
+  "For this task, we have already settled on SQLite for storage.",
+  "We have already agreed that this task uses SQLite for storage.",
+  "The storage backend for this task has been confirmed as SQLite.",
+  "For this task, the storage backend is settled as SQLite.",
+])("interrupted review retains explicit settled storage evidence: %s", text => {
+  const decisions = conversationDecisions([{ role: "user", text }], "Implement the agreed persistence layer.");
+  expect(decisions).toHaveLength(1);
+  expect(decisions[0]).toMatchObject({ applies_to_request: true, confirmed: true,
+    value: text.slice(0, -1), evidence: { message_index: 0, quote: text.slice(0, -1) } });
+});
+
+test.each([
+  "We have not agreed on SQLite for storage for this task.",
+  "We agreed to consider SQLite for storage for this task.",
+  "We agreed on a proposed SQLite backend for this task.",
+  "For another task, we agreed on SQLite for storage.",
+  "We agreed on SQLite for storage for a different task.",
+  "We might settle on SQLite for storage for this task.",
+])("interrupted review excludes unsettled or unrelated storage: %s", text => {
+  expect(conversationDecisions([{ role: "user", text }], "Implement the agreed persistence layer.")).toEqual([]);
+});
+
+
+test("current explicit storage choice supersedes a reported settlement while retaining other decisions", () => {
+  const prior = [{ role: "user" as const, text:
+    "We agreed on SQLite for storage for this task. For this task, the output format is CSV." }];
+  const decisions = conversationDecisions(prior, "Use PostgreSQL for storage.");
+  expect(decisions).toHaveLength(2);
+  expect(decisions.find(item => item.id === "instruction:storage")).toMatchObject({
+    value: "Use PostgreSQL for storage", evidence: { message_index: -1 },
+  });
+  expect(decisions.find(item => item.id === "instruction:output format")?.value).toContain("CSV");
+  expect(decisions.some(item => item.value.includes("SQLite"))).toBe(false);
+});
+
+test("assistant reports of settled choices cannot confirm an option for interrupted review", () => {
+  expect(conversationDecisions([{ role: "assistant", text: "We agreed on SQLite for storage for this task." }],
+    "Implement the agreed persistence layer.")).toEqual([]);
+});

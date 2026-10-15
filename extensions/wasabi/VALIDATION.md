@@ -340,3 +340,35 @@ and was not executed here. These results establish that the reported layout
 counterexample is repaired, not that the entire independent gate passed. Live
 Pi UI and real model calls were not exercised or counted as passed. Existing
 `.ouroboros/context_pack.json` changes and `src/.README.md.swp` are preserved.
+
+## AC 2 retry: preserve reported settlements before a model reply
+
+Validated on 2026-10-15 with `npm run check`: TypeScript passed and all
+11 suites / 243 tests passed. `git diff --check` passed.
+
+The supplied check-package counterexample reported a persistence-layer draft
+that lost the settled storage option when checking ended before a model reply.
+Reproduced the same omission locally with explicit user statements such as
+"We agreed on SQLite for storage for this task" and "The storage backend for
+this task has been confirmed as SQLite". Before repair, eight assertions failed
+across synchronous snapshot and full input-handler tests.
+
+Extended the synchronous conversation snapshot to retain reported user
+settlements as verbatim evidence even when they are not phrased as a `use`
+command or a simple `is` declaration. No extra model call or file source was
+introduced. Added negative cases for proposals, consideration, negation,
+other-task decisions and assistant assertions, plus current-input precedence
+without dropping independent options.
+
+Five added input-handler cases finish while the cancellation-ignoring provider
+has supplied no draft. The tests check that abort is requested immediately,
+the settled option appears in both review and editor, unresolved assessment is
+shown separately, editing remains private until approval, late responses cannot
+replace the edited draft, and only the approved current text is transformed.
+The existing tests also cover unlimited question revisits, explicit answers,
+unapproved recommendations, approval revocation on edit and single forwarding.
+
+These are mocked Pi/provider tests. The independent frozen check package and
+live Pi/real-model behavior were not executed here; no independent gate success
+is claimed. The pre-existing `.ouroboros/context_pack.json` modification and
+`src/.README.md.swp` were preserved and excluded from the commit.
