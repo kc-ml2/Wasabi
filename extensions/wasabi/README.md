@@ -71,10 +71,17 @@ unconfirmed recommendations are excluded. Closing an answer editor returns to
 the controls. Closing a selection dialog or choosing **Cancel request** sends nothing.
 
 The review displays the original request plus applicable confirmed conversation
-decisions and explicitly supplied answers, with each answer tied to its question.
+decisions and explicitly supplied answers. Question text stays private; only the
+latest explicit answer to each question enters the draft. Additional free-form
+details accumulate.
 Unresolved questions appear separately and are never silently filled from
 recommendations. If checking is ended before a result exists, review explicitly
-marks the options as unassessed rather than claiming nothing is missing.
+marks the options as unassessed rather than claiming nothing is missing. A
+synchronous conversation snapshot preserves direct response-language instructions
+without waiting for the checker. It uses exact user evidence, ignores assistant
+suggestions and ambiguous or conditional directives, and gives current input
+precedence. Other task-specific decisions require the checker to assess applicability;
+when interrupted, review leaves unassessed choices visible for user editing.
 **Edit final prompt** opens Pi's editor and returns to review; editing removes any
 previous approval. Each draft generation or edit increments `prompt_revision`;
 approval records `approved_revision`, which must match before forwarding.

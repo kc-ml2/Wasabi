@@ -53,6 +53,39 @@ export interface CheckedRequest {
   confirmed_combination?: Recommendation[];
 }
 
+/** Conservative, synchronous fallback for an interrupted check. Only explicit response
+ * language directives are carried over; task-specific applicability stays with the
+ * checker. Keep the exact user wording as evidence, never infer from their language.
+ */
+export function conversationDecisions(conversation: ConversationMessage[], original_prompt: string): OptionResolution[] {
+  const language = /(?:use)\s+(?:Korean|English|Japanese|Chinese|French|German|Spanish)(?=\s*[.!。]?$)|(?:answer|respond|reply|write|output)(?:\s+(?:to me|the answer|the response))?\s+in\s+([\p{L}-]+)|(?:use)\s+([\p{L}-]+)\s+(?:for (?:your|the|all) (?:final )?(?:answers?|responses?|replies)|when (?:answering|responding))|((?:한국어|영어|일본어|중국어)(?:로|으로))\s*(?:답변|응답|작성)|(?:답변|응답)(?:은|는|을)?\s*((?:한국어|영어|일본어|중국어)(?:로|으로))/giu;
+  let result: OptionResolution | undefined;
+  for (const [index, message] of [...conversation, { role: "user" as const, text: original_prompt }].entries()) {
+    if (message.role !== "user") continue;
+    // Quoted examples, questions, alternatives and conditional/other-task rules
+    // cannot establish a current decision without semantic assessment.
+    for (const sentence of (message.text.match(/[^.!?\n。]+[.!?。]?/gu) ?? [])) {
+      if (/[?？"“”「」`]|\b(?:if|unless|could|might|maybe|example|instead of|or|previous|other|earlier)\b|(?:라면|예시|이전|다른|할까|또는)/iu.test(sentence)) continue;
+      const matches = [...sentence.matchAll(language)];
+      if (!matches.length) continue;
+      // Only direct instructions, not reports about a different task or person.
+      if (!/^\s*(?:for (?:this (?:task|request|conversation)|all (?:answers|responses)),?\s*)?(?:please\s+)?(?:always\s+)?(?:answer|respond|reply|write|output|use)\b|^\s*(?:앞으로\s*|항상\s*)?(?:한국어|영어|일본어|중국어|답변|응답)/iu.test(sentence)) continue;
+      const match = matches[matches.length - 1];
+      result = { id: "response_language", applies_to_request: true, confirmed: true,
+        value: match[0], evidence: { message_index: index === conversation.length ? -1 : index, quote: match[0] } };
+    }
+  }
+  return result ? [result] : [];
+}
+
+/** Snapshot before awaiting the model, also usable when no model reply exists. */
+export function createReviewRequest(ctx: ExtensionContext, original_prompt: string): CheckedRequest {
+  const conversation_context = conversationSource.read(ctx);
+  return { check: { original_prompt, conversation_context, information_sources: [conversationSource.name],
+    option_resolutions: conversationDecisions(conversation_context, original_prompt),
+    missing_options: [], recommended_combination: [] } };
+}
+
 export const CHECK_SYSTEM_PROMPT = `You are Wasabi, a lightweight request checker for coding and research.
 Compare EVERY original_prompt with conversation_context. Even if intent can be inferred,
 identify options required to carry out the current request that remain undecided after considering

@@ -1,8 +1,8 @@
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
-import type { CheckedRequest } from "./checker.ts";
+import { conversationDecisions, type CheckedRequest } from "./checker.ts";
 
 export type ClarificationAction =
-  | { type: "answer"; question: string; answer: string }
+  | { type: "answer"; question: string; answer: string; option_id?: string }
   | { type: "finish" }
   | { type: "edit"; text: string }
   | { type: "approve" }
@@ -11,7 +11,7 @@ export type ClarificationAction =
 
 /** Private per-input state. Only forward()'s claimed prompt crosses the input boundary. */
 export class WasabiClarification {
-  readonly clarification_history: { question: string; answer: string }[] = [];
+  readonly clarification_history: { question: string; answer: string; option_id?: string }[] = [];
   private draft: string | undefined;
   prompt_revision = 0;
   approved_revision: number | null = null;
@@ -46,14 +46,14 @@ export function applyClarificationActions(
     switch (action.type) {
       case "answer":
         if (state.interaction_state !== "clarifying" || !action.answer.trim()) break;
-        state.clarification_history.push({ question: action.question, answer: action.answer });
+        state.clarification_history.push({ question: action.question, answer: action.answer, ...(action.option_id ? { option_id: action.option_id } : {}) });
         break;
       case "finish":
         if (state.interaction_state !== "clarifying") break;
         // Only explicit answers are included, never unconfirmed recommendations.
         {
           const decisions = [...state.applicable_decisions, ...new Map(state.clarification_history.map(item =>
-            [item.question, `${item.question}: ${item.answer}`])).values()];
+            [item.question, item.option_id ? `${item.option_id}: ${item.answer}` : item.answer])).values()];
           state.final_prompt = state.original_prompt + (decisions.length
             ? `\n\n${decisions.map(answer => `- ${answer}`).join("\n")}` : "");
         }
@@ -87,7 +87,8 @@ export function applyClarificationActions(
 export async function reviewClarification(ctx: ExtensionContext, request: CheckedRequest, startReview = false): Promise<string | undefined> {
   if (!ctx.hasUI) return undefined;
   const state = new WasabiClarification(request.check.original_prompt,
-    (request.check.option_resolutions ?? []).filter(item => item.applies_to_request && item.confirmed)
+    (request.check.option_resolutions ?? conversationDecisions(request.check.conversation_context, request.check.original_prompt))
+      .filter(item => item.applies_to_request && item.confirmed)
       .map(item => `${item.id}: ${item.value}`));
   if (startReview) state.apply([{ type: "finish" }]);
   const options = request.check.missing_options;
@@ -111,7 +112,7 @@ export async function reviewClarification(ctx: ExtensionContext, request: Checke
       for (const recommendation of request.check.recommended_combination) {
         const option = options.find(item => item.id === recommendation.option_id)!;
         const choice = option.available_choices.find(item => item.id === recommendation.choice_id)!;
-        state.apply([{ type: "answer", question: option.question, answer: choice.label }]);
+        state.apply([{ type: "answer", question: option.question, answer: choice.label, option_id: option.id }]);
       }
       state.apply([{ type: "finish" }]);
       break;
@@ -125,10 +126,10 @@ export async function reviewClarification(ctx: ExtensionContext, request: Checke
       const choice = option.available_choices[choices.indexOf(answer ?? "")];
       const text = choice?.label ?? (answer === "Write an answer"
         ? await ctx.ui.editor(`Wasabi · ${option.question} (close to return to controls)`, "") : undefined);
-      if (text?.trim()) state.apply([{ type: "answer", question: option.question, answer: text }]);
+      if (text?.trim()) state.apply([{ type: "answer", question: option.question, answer: text, option_id: option.id }]);
     } else if (action === "Add clarification") {
       const answer = await ctx.ui.editor("Wasabi · Additional clarification (close to return to controls)", "");
-      if (answer?.trim()) state.apply([{ type: "answer", question: "Additional clarification", answer }]);
+      if (answer?.trim()) state.apply([{ type: "answer", question: `Additional clarification ${state.clarification_history.length}`, answer }]);
     }
   }
   while (state.interaction_state === "reviewing") {

@@ -43,8 +43,9 @@ test("no question count limit; history remains private and latest answers form t
   state.apply([{ type: "answer", question: "Question 0", answer: "Corrected" }, { type: "finish" }]);
   expect(state.clarification_history).toHaveLength(251);
   expect(state.final_prompt).toContain("Answer 249");
-  expect(state.final_prompt).toContain("- Question 0: Corrected");
+  expect(state.final_prompt).toContain("- Corrected");
   expect(state.final_prompt).not.toContain("Answer 0");
+  expect(state.final_prompt).not.toContain("Question");
   expect(state.approved).toBe(false);
 });
 
@@ -74,7 +75,7 @@ test("finish is available inside individual questions and no answer is implicitl
 test("UI allows arbitrarily many questions and answers before review", async () => {
   const actions = Array.from({ length: 120 }, () => ["1. Which focus?", "2. Deployment"]).flat();
   const ctx = ui([...actions, "Finish clarification and review prompt", "Approve and send"]);
-  expect(await reviewClarification(ctx, request)).toBe("Compare the databases\n\n- Which focus?: Deployment");
+  expect(await reviewClarification(ctx, request)).toBe("Compare the databases\n\n- focus: Deployment");
   expect(ctx.ui.select).toHaveBeenCalledTimes(242);
 });
 
@@ -154,9 +155,29 @@ test("early finish combines applicable decisions and explicit answers while leav
     option_resolutions: [{ id: "scope", applies_to_request: true, confirmed: true, value: "Existing project",
       evidence: { message_index: 0, quote: "Performance" } }],
   } });
-  expect(result).toBe("Compare the databases\n\n- scope: Existing project\n- Which focus?: Deployment");
+  expect(result).toBe("Compare the databases\n\n- scope: Existing project\n- focus: Deployment");
   const unresolved = (ctx.ui.select.mock.calls[3][0] as string).split("Unresolved options (not included in the prompt):")[1];
   expect(unresolved).toContain("Which format?");
   expect(unresolved).not.toContain("Which focus?");
   expect(result).not.toContain("Performance");
+});
+
+
+test("model replies without resolutions still retain an explicit conversation language directive", async () => {
+  const ctx = ui(["Finish clarification and review prompt", "Approve and send"]);
+  const result = await reviewClarification(ctx, { check: { ...request.check,
+    conversation_context: [{ role: "user", text: "Please answer in Korean." }],
+  } });
+  expect(result).toContain("answer in Korean");
+  expect(result).not.toContain("Which focus?");
+  expect(result).not.toContain("Performance");
+});
+
+test("additional explicit details are accumulated instead of replacing earlier details", async () => {
+  const ctx = ui(["Add clarification", "Add clarification", "Finish clarification and review prompt", "Approve and send"],
+    ["Include benchmarks", "Include deployment steps"]);
+  const result = await reviewClarification(ctx, request);
+  expect(result).toContain("Include benchmarks");
+  expect(result).toContain("Include deployment steps");
+  expect(result).not.toContain("Additional clarification");
 });

@@ -1,7 +1,7 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { WasabiModel } from "./model.ts";
 import { WasabiAutomation } from "./automation.ts";
-import { conversationSource, WasabiChecker } from "./checker.ts";
+import { createReviewRequest, WasabiChecker } from "./checker.ts";
 import { complete } from "@earendil-works/pi-ai/compat";
 import { WasabiRequest, WasabiReviewRequested } from "./recovery.ts";
 import { reviewClarification } from "./clarification.ts";
@@ -16,6 +16,7 @@ export default function wasabi(pi: ExtensionAPI, invoke: typeof complete = compl
     if (event.source === "extension" || !await automation.shouldCheck(ctx)) return { action: "continue" };
     active?.cancel();
     const state = new WasabiRequest(event.text);
+    const reviewRequest = createReviewRequest(ctx, event.text);
     active = state;
     try {
       if (ctx.hasUI) ctx.ui.setStatus("wasabi", "Wasabi · Private clarification · Main session paused");
@@ -37,11 +38,7 @@ export default function wasabi(pi: ExtensionAPI, invoke: typeof complete = compl
         } catch (error) {
           if (state.cancelled || state.forwarded) break;
           if (error instanceof WasabiReviewRequested) {
-            const finalPrompt = await reviewClarification(ctx, { check: {
-              original_prompt: state.original_prompt,
-              conversation_context: conversationSource.read(ctx), information_sources: [conversationSource.name],
-              missing_options: [], recommended_combination: [],
-            } }, true);
+            const finalPrompt = await reviewClarification(ctx, reviewRequest, true);
             if (finalPrompt !== undefined) {
               const claimed = state.forward(finalPrompt);
               if (claimed !== undefined) return { action: "transform", text: claimed, images: event.images };

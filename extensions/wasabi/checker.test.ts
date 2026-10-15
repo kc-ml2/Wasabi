@@ -1,6 +1,6 @@
 import { jest } from "@jest/globals";
 import wasabi from "./index.ts";
-import { CHECK_SYSTEM_PROMPT, conversationSource, parseCheckResponse, WasabiChecker } from "./checker.ts";
+import { CHECK_SYSTEM_PROMPT, conversationDecisions, conversationSource, parseCheckResponse, WasabiChecker } from "./checker.ts";
 
 const conversation = [
   { role: "user" as const, text: "For research, compare SQLite and Postgres. Cover performance or deployment." },
@@ -242,3 +242,36 @@ test("assistant proposals cannot serve as user confirmation evidence", () => {
   expect(() => parseCheckResponse(JSON.stringify({ ...clear, option_resolutions: [{ ...resolution, confirmed: false }] }),
     conversation)).not.toThrow();
 });
+
+
+test("interruption fallback preserves explicit language with current-input precedence and exact user evidence", () => {
+  const prior = [{ role: "user" as const, text: "Please answer in Korean." },
+    { role: "assistant" as const, text: "Answer in French." }];
+  expect(conversationDecisions(prior, "Compare them")).toEqual([{
+    id: "response_language", applies_to_request: true, confirmed: true, value: "answer in Korean",
+    evidence: { message_index: 0, quote: "answer in Korean" },
+  }]);
+  expect(conversationDecisions(prior, "Answer in English.")[0]).toMatchObject({
+    value: "Answer in English", evidence: { message_index: -1, quote: "Answer in English" },
+  });
+  expect(conversationDecisions([{ role: "user", text: "답변은 한국어로 작성해 주세요." }], "비교해 줘")[0].value)
+    .toContain("한국어로");
+});
+
+test.each([
+  'For a different report, answer in French.',
+  'Could you answer in French?',
+  'Answer in French?',
+  'If this is for France, answer in French.',
+  'Example: "Answer in French".',
+  'Answer in French or Korean.',
+  'The previous request was to answer in French.',
+])("interruption fallback never confirms ambiguous or unrelated instructions: %s", text => {
+  expect(conversationDecisions([{ role: "user", text }], "Compare databases")).toEqual([]);
+});
+
+
+test.each(["Use Korean.", "For this task, answer in Korean.", "Always respond in Korean."])(
+  "direct language instructions survive interruption: %s", text => {
+    expect(conversationDecisions([{ role: "user", text }], "Compare databases")[0].value).toContain("Korean");
+  });

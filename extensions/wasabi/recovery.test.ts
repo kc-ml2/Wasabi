@@ -290,3 +290,27 @@ test("finish revokes a clarifying call before cancellation completes", async () 
   expect(state.interaction_state).toBe("reviewing");
   expect(state.failure).toBeUndefined();
 });
+
+
+test("finish before any model reply retains the captured language directive through editing and approval", async () => {
+  jest.useFakeTimers();
+  const invoke = jest.fn<any>(() => new Promise(() => {}));
+  const h = harness(["Finish clarification and review prompt", "Edit final prompt", "Approve and send"], invoke);
+  const entries = [{ type: "message", message: { role: "user", content: "Please answer in Korean." } }];
+  h.ctx.sessionManager.getBranch = () => entries;
+  h.ctx.ui.editor = jest.fn<any>(async (_title: string, draft: string) => draft + "\nInclude benchmark data.");
+  await h.commands["wasabi-model"].handler("p/light", h.ctx);
+  const before = JSON.stringify(entries);
+  const input = h.handlers.input({ source: "interactive", text: "Compare databases" }, h.ctx);
+  await jest.advanceTimersByTimeAsync(200);
+  const result = await input;
+  expect(result.action).toBe("transform");
+  expect(result.text).toContain("Compare databases");
+  expect(result.text).toContain("answer in Korean");
+  expect(result.text).toContain("Include benchmark data");
+  expect(h.ctx.ui.select.mock.calls[1][0]).toContain("answer in Korean");
+  expect(h.ctx.ui.select.mock.calls[2][0]).toContain("Include benchmark data");
+  expect(invoke).toHaveBeenCalledTimes(1);
+  expect((invoke.mock.calls[0][2] as any).signal.aborted).toBe(true);
+  expect(JSON.stringify(entries)).toBe(before);
+});
