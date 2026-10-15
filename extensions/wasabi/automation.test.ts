@@ -183,3 +183,93 @@ test("extension commands and ordinary input use the automatic checking configura
   expect(h.entries.at(-1).data).toEqual({ enabled: true });
   expect(h.ctx.ui.select).toHaveBeenCalledTimes(1);
 });
+
+function extensionHarness() {
+  const h = harness();
+  const commands: Record<string, any> = {};
+  const events: Record<string, any> = {};
+  const invoke = jest.fn<any>(async () => ({ content: [{ type: "text", text:
+    JSON.stringify({ missing_options: [], recommended_combination: [] }) }], stopReason: "stop" }));
+  h.ctx.modelRegistry.getApiKeyAndHeaders = jest.fn<any>(async () => ({ ok: true, apiKey: "test-key" }));
+  wasabi({ ...h.pi,
+    registerCommand: (name: string, command: any) => { commands[name] = command; },
+    on: (name: string, handler: any) => { events[name] = handler; },
+  } as any, invoke);
+  const input = () => events.input({ source: "interactive", text: "Research the alternatives" }, h.ctx);
+  const toggle = (mode: string) => commands.wasabi.handler(mode, h.ctx);
+  const select = (key: string) => commands["wasabi-model"].handler(key, h.ctx);
+  const toggles = () => h.entries.filter(entry => entry.customType === AUTOMATION_ENTRY_TYPE)
+    .map(entry => entry.data.enabled);
+  return { ...h, events, invoke, input, toggle, select, toggles };
+}
+
+test.each(["first input", "on command"])("off invalidates pending activation from %s at the extension boundary", async mode => {
+  const h = extensionHarness();
+  await h.events.session_start({}, h.ctx);
+  let choose!: (choice: string) => void;
+  h.ctx.ui.select.mockImplementation(() => new Promise(resolve => { choose = resolve; }));
+  const pending = mode === "first input" ? h.input() : h.toggle("on");
+  expect(h.toggles()).toEqual([]);
+  expect(h.invoke).not.toHaveBeenCalled();
+  expect(h.ctx.modelRegistry.getApiKeyAndHeaders).not.toHaveBeenCalled();
+  await h.toggle("off");
+  choose("p/light");
+  await pending;
+  expect(h.toggles()).toEqual([false]);
+  expect(await h.input()).toEqual({ action: "continue" });
+  expect(h.invoke).not.toHaveBeenCalled();
+  expect(h.ctx.modelRegistry.getApiKeyAndHeaders).not.toHaveBeenCalled();
+  await h.toggle("on");
+  expect(h.toggles()).toEqual([false, true]);
+  expect(await h.input()).toEqual({ action: "continue" });
+  expect(h.invoke).toHaveBeenCalledTimes(1);
+  expect(h.invoke.mock.calls[0][0]).toEqual({ provider: "p", id: "light" });
+  expect(h.ctx.ui.select).toHaveBeenCalledTimes(1);
+});
+
+test("off before setup survives model commands, main model changes and resume until on", async () => {
+  const h = extensionHarness();
+  await h.toggle("off");
+  await h.input();
+  expect(h.ctx.ui.select).not.toHaveBeenCalled();
+  await h.select("p/light");
+  await h.select("p/other");
+  h.ctx.model = { provider: "main", id: "changed" };
+  await h.events.session_start({ reason: "resume" }, h.ctx);
+  await h.input();
+  expect(h.toggles()).toEqual([false]);
+  expect(h.invoke).not.toHaveBeenCalled();
+  expect(h.ctx.modelRegistry.getApiKeyAndHeaders).not.toHaveBeenCalled();
+  await h.toggle("on");
+  await h.input();
+  expect(h.toggles()).toEqual([false, true]);
+  expect(h.invoke).toHaveBeenCalledTimes(1);
+  expect(h.invoke.mock.calls[0][0]).toEqual({ provider: "p", id: "other" });
+  expect(h.ctx.ui.select).not.toHaveBeenCalled();
+});
+
+test("on after off records pending activation without enabling until first selection succeeds", async () => {
+  const h = harness();
+  await h.automation.setEnabled(h.ctx, false);
+  let choose!: (choice: string | undefined) => void;
+  h.ctx.ui.select.mockImplementation(() => new Promise(resolve => { choose = resolve; }));
+  const cancelled = h.automation.setEnabled(h.ctx, true);
+  expect(h.automation.activation_pending).toBe(true);
+  expect(h.automation.enabled).toBe(false);
+  expect(h.automation.initial_setup_completed).toBe(false);
+  choose(undefined);
+  expect(await cancelled).toBe(false);
+  expect(h.automation.activation_pending).toBe(false);
+  expect(h.automation.enabled).toBe(false);
+  expect(h.automation.initial_setup_completed).toBe(false);
+  const pending = h.automation.setEnabled(h.ctx, true);
+  expect(h.automation.activation_pending).toBe(true);
+  expect(h.automation.enabled).toBe(false);
+  choose("p/light");
+  expect(await pending).toBe(true);
+  expect(h.automation.activation_pending).toBe(false);
+  expect(h.automation.enabled).toBe(true);
+  expect(h.automation.initial_setup_completed).toBe(true);
+  expect(h.entries.filter(entry => entry.customType === AUTOMATION_ENTRY_TYPE)
+    .map(entry => entry.data.enabled)).toEqual([false, true]);
+});
