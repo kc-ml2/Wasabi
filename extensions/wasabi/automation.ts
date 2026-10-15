@@ -19,6 +19,9 @@ export class WasabiAutomation {
     return this.preference === true && this.model.selectedKey !== undefined;
   }
 
+  /** Includes first-use setup, but excludes an explicit off preference. */
+  get checkingRequested(): boolean { return this.preference !== false; }
+
   restore(ctx: ExtensionContext): void {
     this.activationGeneration++;
     this.activation_pending = false;

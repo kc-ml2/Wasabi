@@ -20,63 +20,69 @@ export default function wasabi(pi: ExtensionAPI, invoke: typeof complete = compl
     automation.restore(ctx);
   });
   pi.on("input", async (event, ctx) => {
-    if (event.source === "extension" || !await automation.shouldCheck(ctx)) return { action: "continue" };
-    active?.cancel();
-    const state = new WasabiRequest(event.text);
-    const reviewRequest = createReviewRequest(ctx, event.text);
-    active = state;
+    if (event.source === "extension" || !automation.checkingRequested) return { action: "continue" };
+    // Own the whole private interaction, including the first-use chooser. The
+    // chooser's nested indicator must restore this status rather than clear it.
     const leave = indicator.enter(ctx, "Wasabi · Private clarification · Main session paused");
     try {
-      while (!state.cancelled && !state.forwarded) {
-        try {
-          const request = await state.call(ctx, signal => checker.check(ctx, state.original_prompt, signal));
-          if (!request.check.missing_options.length) {
-            if (state.forward(state.original_prompt) !== undefined) return { action: "continue" };
-            break;
-          }
-          state.invalidate();
-          state.interaction_state = "clarifying";
-          const finalPrompt = await reviewClarification(ctx, request);
-          if (finalPrompt !== undefined) {
-            const claimed = state.forward(finalPrompt);
-            if (claimed !== undefined) return { action: "transform", text: claimed, images: event.images };
-          }
-          state.cancel();
-        } catch (error) {
-          if (state.cancelled || state.forwarded) break;
-          if (error instanceof WasabiReviewRequested) {
-            const finalPrompt = await reviewClarification(ctx, reviewRequest, true);
+      if (!await automation.shouldCheck(ctx)) return { action: "continue" };
+      active?.cancel();
+      const state = new WasabiRequest(event.text);
+      const reviewRequest = createReviewRequest(ctx, event.text);
+      active = state;
+      try {
+        while (!state.cancelled && !state.forwarded) {
+          try {
+            const request = await state.call(ctx, signal => checker.check(ctx, state.original_prompt, signal));
+            if (!request.check.missing_options.length) {
+              if (state.forward(state.original_prompt) !== undefined) return { action: "continue" };
+              break;
+            }
+            state.invalidate();
+            state.interaction_state = "clarifying";
+            const finalPrompt = await reviewClarification(ctx, request);
             if (finalPrompt !== undefined) {
               const claimed = state.forward(finalPrompt);
               if (claimed !== undefined) return { action: "transform", text: claimed, images: event.images };
             }
             state.cancel();
-            break;
-          }
-          state.interaction_state = "recovering";
-          if (!ctx.hasUI) {
-            ctx.ui.notify(`Wasabi · Original request not sent; preserved: ${state.original_prompt}\n${String(error)}`, "error");
+          } catch (error) {
+            if (state.cancelled || state.forwarded) break;
+            if (error instanceof WasabiReviewRequested) {
+              const finalPrompt = await reviewClarification(ctx, reviewRequest, true);
+              if (finalPrompt !== undefined) {
+                const claimed = state.forward(finalPrompt);
+                if (claimed !== undefined) return { action: "transform", text: claimed, images: event.images };
+              }
+              state.cancel();
+              break;
+            }
+            state.interaction_state = "recovering";
+            if (!ctx.hasUI) {
+              ctx.ui.notify(`Wasabi · Original request not sent; preserved: ${state.original_prompt}\n${String(error)}`, "error");
+              state.cancel();
+              break;
+            }
+            const action = await ctx.ui.select(
+              `Wasabi · Recovery\n${state.failure?.message ?? String(error)}\n\nOriginal request:\n${state.original_prompt}`,
+              ["Retry", "Send original unchanged", "Cancel request"],
+            );
+            if (state.cancelled || state.forwarded) break;
+            state.invalidate();
+            if (action === "Retry") continue;
+            if (action === "Send original unchanged") {
+              const claimed = state.forward(state.original_prompt);
+              if (claimed !== undefined) return { action: "transform", text: claimed, images: event.images };
+            }
             state.cancel();
-            break;
           }
-          const action = await ctx.ui.select(
-            `Wasabi · Recovery\n${state.failure?.message ?? String(error)}\n\nOriginal request:\n${state.original_prompt}`,
-            ["Retry", "Send original unchanged", "Cancel request"],
-          );
-          if (state.cancelled || state.forwarded) break;
-          state.invalidate();
-          if (action === "Retry") continue;
-          if (action === "Send original unchanged") {
-            const claimed = state.forward(state.original_prompt);
-            if (claimed !== undefined) return { action: "transform", text: claimed, images: event.images };
-          }
-          state.cancel();
         }
+        return { action: "handled" };
+      } finally {
+        if (active === state) active = undefined;
       }
-      return { action: "handled" };
     } finally {
       leave();
-      if (active === state) active = undefined;
     }
   });
   pi.registerCommand("wasabi", {

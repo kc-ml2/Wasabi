@@ -103,7 +103,9 @@ shows **Wasabi · Private clarification · Main session paused** in its status a
 The indicator clears before returning control to the main session, including
 approval, cancellation, requests needing no clarification, and completed error
 recovery. Opening or closing a model chooser during a held request preserves the
-request's indicator. Switching sessions clears the old interaction's indicator;
+request's indicator. First-use input keeps the indicator continuously visible from
+model selection through checking and final review until the request returns to
+the main session. Switching sessions clears the old interaction's indicator;
 late cleanup cannot clear a new interaction. Dialog and editor titles also
 identify Wasabi.
 

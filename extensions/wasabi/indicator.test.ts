@@ -87,8 +87,41 @@ test("first input identifies selection, checking, clarification, review, and for
       expect.stringContaining("Review final prompt"),
     ]);
     expect(spy).toHaveBeenCalledTimes(1);
+    expect(h.ctx.ui.setStatus.mock.calls).toEqual([
+      ["wasabi", active], ["wasabi", selecting], ["wasabi", active], ["wasabi", undefined],
+    ]);
     expect(h.status()).toBeUndefined();
   } finally { spy.mockRestore(); }
+});
+
+test.each([
+  ["question cancellation", ["p/light", "Cancel request"], "handled"],
+  ["review cancellation", ["p/light", "Finish clarification and review prompt", "Cancel request"], "handled"],
+  ["recovery cancellation", ["p/light", "Cancel request"], "handled"],
+  ["no missing options", ["p/light"], "continue"],
+] as const)("first-use %s keeps the indicator until terminal cleanup", async (mode, actions, expected) => {
+  const h = harness([...actions]);
+  if (mode === "recovery cancellation") h.invoke.mockRejectedValueOnce(new Error("Unavailable"));
+  if (mode === "no missing options") h.invoke.mockResolvedValueOnce({ stopReason: "stop", content: [
+    { type: "text", text: JSON.stringify({ missing_options: [], recommended_combination: [] }) },
+  ] });
+  expect((await h.input()).action).toBe(expected);
+  expect(h.ctx.ui.setStatus.mock.calls).toEqual([
+    ["wasabi", active], ["wasabi", selecting], ["wasabi", active], ["wasabi", undefined],
+  ]);
+  expect(h.status()).toBeUndefined();
+});
+
+test.each(["dismiss", "error"])("first-use chooser %s clears the enclosing interaction", async mode => {
+  const h = harness([undefined]);
+  if (mode === "error") h.ctx.ui.select.mockRejectedValueOnce(new Error("Dialog failed"));
+  if (mode === "error") await expect(h.input()).rejects.toThrow("Dialog failed");
+  else expect((await h.input()).action).toBe("continue");
+  expect(h.ctx.ui.setStatus.mock.calls).toEqual([
+    ["wasabi", active], ["wasabi", selecting], ["wasabi", active], ["wasabi", undefined],
+  ]);
+  expect(h.invoke).not.toHaveBeenCalled();
+  expect(h.status()).toBeUndefined();
 });
 
 test.each(["Retry", "Send original unchanged", "Cancel request", undefined])(
