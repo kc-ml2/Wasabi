@@ -1,5 +1,30 @@
 # Wasabi validation record
 
+## AC 4: cancellation authority and overlapping retries
+
+Validated on 2026-10-15 with `npm run check`: TypeScript passed and all
+11 Jest suites / 209 tests passed. The focused recovery suite passed all
+51 tests. No production change was needed for this criterion.
+
+Added eight cases covering checking and clarifying calls, timeout and user
+interruption, and obsolete provider success and failure. Each uses a model
+promise that ignores cancellation and remains pending while recovery starts.
+The abort listener verifies that active-call authority is already removed and
+the generation advanced when cancellation is requested. A retry keeps the same
+request ID with a newer generation. Settling the obsolete provider while the
+retry is pending cannot settle that retry, replace its active call, publish a
+checker result, change its state, or forward the original. Only the current
+provider result becomes available; forwarding is claimed at most once.
+
+Existing recovery tests cover finite deadlines (including a busy event loop),
+synchronous errors, recovery's retry/send-original/cancel choices, original
+preservation, early finish without waiting for cancellation, late replies and
+failures during review, and session replacement. Response handling checks the
+active call identity, request ID, generation and permitted state before
+returning a result. These checks use mocked Pi contexts and providers. Live Pi
+and real-provider cancellation were not manually exercised; the independent
+Ouroboros acceptance harness was not run by this worker.
+
 ## AC 3: interaction indicator lifetime
 
 Validated on 2026-10-15 with `npm run check`: TypeScript passed and all

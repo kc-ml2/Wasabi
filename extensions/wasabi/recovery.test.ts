@@ -7,6 +7,70 @@ const quiet: any = { hasUI: false };
 const response = { stopReason: "stop", content: [{ type: "text", text: '{"missing_options":[],"recommended_combination":[]}' }] };
 afterEach(() => jest.useRealTimers());
 
+for (const kind of ["checking", "clarifying"] as const) {
+  for (const failure of ["timeout", "interrupted"] as const) {
+    test.each(["resolve", "reject"] as const)(
+      `${kind}: ${failure} retry ignores obsolete %s while the replacement model is still waiting`, async settlement => {
+        jest.useFakeTimers();
+        let obsoleteResolve!: (value: any) => void;
+        let obsoleteReject!: (error: Error) => void;
+        let retryResolve!: (value: any) => void;
+        const complete = jest.fn<any>()
+          .mockImplementationOnce(() => new Promise((resolve, reject) => {
+            obsoleteResolve = resolve;
+            obsoleteReject = reject;
+          }))
+          .mockImplementationOnce(() => new Promise(resolve => { retryResolve = resolve; }));
+        const checker = new WasabiChecker({ complete });
+        const state = new WasabiRequest("Original with exact spacing  ");
+        const ctx: any = { hasUI: failure === "interrupted", ui: { select: async () => "Stop waiting" },
+          sessionManager: { getBranch: () => [] } };
+        const old = state.call(ctx, signal => checker.check(ctx, state.original_prompt, signal), CALL_TIMEOUT_MS, kind);
+        const failed = expect(old).rejects.toThrow("stopped");
+        const obsolete = state.active_call!;
+        // Provider cancellation observes revoked authority immediately. It never
+        // resolves/rejects the model promise, so recovery cannot depend on it.
+        const cancelled = jest.fn(() => {
+          expect(state.active_call).toBeNull();
+          expect(state.call_generation).toBeGreaterThan(obsolete.call_generation);
+          expect(state.interaction_state).toBe("recovering");
+        });
+        obsolete.controller.signal.addEventListener("abort", cancelled);
+        await jest.advanceTimersByTimeAsync(failure === "timeout" ? CALL_TIMEOUT_MS : 200);
+        await failed;
+        expect(cancelled).toHaveBeenCalledTimes(1);
+        expect(state.failure).toMatchObject({ kind: failure, request_id: state.request_id,
+          call_generation: obsolete.call_generation });
+
+        let settled = false;
+        const retry = state.call(ctx, signal => checker.check(ctx, state.original_prompt, signal), CALL_TIMEOUT_MS, kind)
+          .then(result => { settled = true; return result; });
+        const replacement = state.active_call!;
+        expect(replacement.request_id).toBe(obsolete.request_id);
+        expect(replacement.call_generation).toBeGreaterThan(obsolete.call_generation);
+        if (settlement === "resolve") obsoleteResolve(response);
+        else obsoleteReject(new Error("Obsolete provider failure"));
+        await jest.advanceTimersByTimeAsync(0);
+        expect(settled).toBe(false);
+        expect(state.active_call).toBe(replacement);
+        expect(state.interaction_state).toBe(kind);
+        expect(state.failure).toBeUndefined();
+        expect(checker.pending).toBeUndefined();
+        expect(state.forwarded).toBe(false);
+        expect(state.original_prompt).toBe("Original with exact spacing  ");
+
+        retryResolve(response);
+        const current = await retry;
+        expect(checker.pending).toBe(current);
+        expect(state.active_call).toBeNull();
+        expect(state.failure).toBeUndefined();
+        expect(state.forward(state.original_prompt)).toBe("Original with exact spacing  ");
+        expect(state.forward("Duplicate or obsolete draft")).toBeUndefined();
+        expect(complete).toHaveBeenCalledTimes(2);
+      });
+  }
+}
+
 test("finite timeout aborts a nonresponsive provider and preserves the original", async () => {
   jest.useFakeTimers();
   const state = new WasabiRequest("Original");
