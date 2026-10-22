@@ -1,7 +1,7 @@
 import { complete, type UserMessage } from "@earendil-works/pi-ai/compat";
 import { isToolCallEventType, type ExtensionAPI, type ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { createDiffHighlights, previewEdit, selectDiffExcerpt } from "../src/crunch-diff.ts";
-import { liteLLMSessionHeaders } from "../src/litellm-session.ts";
+import { createDiffHighlights, previewEdit, selectDiffExcerpt } from "./crunch-diff.ts";
+import { liteLLMSessionHeaders } from "../../src/litellm-session.ts";
 
 const SYSTEM_PROMPT = `You summarize proposed file changes for a human reviewer.
 Describe what the change does in exactly one concise Korean sentence.

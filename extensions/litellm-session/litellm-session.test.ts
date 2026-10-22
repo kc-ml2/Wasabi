@@ -1,7 +1,7 @@
 import * as assert from "node:assert/strict";
 import { test } from "@jest/globals";
-import litellmSession from "../extensions/litellm-session.ts";
-import { liteLLMSessionHeaders } from "../src/litellm-session.ts";
+import litellmSession from "./index.ts";
+import { liteLLMSessionHeaders } from "../../src/litellm-session.ts";
 
 test("shared header policy only attaches the session ID to configured providers", () => {
   for (const provider of ["centinels", "openai"]) {

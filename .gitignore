@@ -4,3 +4,4 @@ coverage/
 /.test-dist/
 *.log
 .DS_Store
+*.cast

@@ -1,6 +1,6 @@
 import * as assert from "node:assert/strict";
 import { test } from "@jest/globals";
-import cropExtension from "../extensions/crop.ts";
+import cropExtension from "./index.ts";
 
 type RegisteredCommand = {
   name: string;
