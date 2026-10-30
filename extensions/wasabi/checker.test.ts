@@ -1,4 +1,7 @@
 import { jest } from "@jest/globals";
+import { mkdtempSync, readFileSync, rmSync, statSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import wasabi from "./index.ts";
 import { CHECK_SYSTEM_PROMPT, conversationDecisions, conversationSource, parseCheckResponse, WasabiChecker, WasabiResponseFormatError } from "./checker.ts";
 import { WasabiRequest } from "./recovery.ts";
@@ -53,6 +56,53 @@ function harness(result: unknown = missing()) {
   };
   return { checker, ctx, complete, entries, pi, events, commands };
 }
+
+test("evidence errors identify the field and distinguish quote and index failures", () => {
+  const result = missing();
+  result.missing_options[0].available_choices[1].evidence.quote = "paraphrased";
+  expect(() => parseCheckResponse(JSON.stringify(result), conversation))
+    .toThrow("missing_options[0].available_choices[1].evidence: quote is not an exact substring of conversation_context[0]");
+  result.missing_options[0].evidence.message_index = 999;
+  // Choice validation runs first; restore it to exercise the option's index error.
+  result.missing_options[0].available_choices[1].evidence.quote = "deployment";
+  expect(() => parseCheckResponse(JSON.stringify(result), conversation))
+    .toThrow("missing_options[0].evidence: invalid message_index 999");
+  expect(() => parseCheckResponse(JSON.stringify({ ...clear, option_resolutions: [{
+    id: "focus", applies_to_request: true, confirmed: true, value: "x",
+    evidence: { message_index: -1, quote: "invented" },
+  }] }), conversation, "Compare them")).toThrow("option_resolutions[0].evidence: quote is not an exact substring of original_prompt");
+});
+
+test("opt-in diagnostics correlate input, raw output and validation errors without retrying", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "wasabi-diagnostics-"));
+  const previous = process.env.WASABI_DIAGNOSTIC_LOG;
+  try {
+    const path = join(dir, "checks.jsonl");
+    process.env.WASABI_DIAGNOSTIC_LOG = path;
+    const result = missing();
+    result.missing_options[0].evidence.quote = "invented";
+    const h = harness(result);
+    await expect(h.checker.check(h.ctx, "Compare them")).rejects.toThrow("invalid checker output");
+    expect(h.complete).toHaveBeenCalledTimes(1);
+    const logs = readFileSync(path, "utf8").trim().split("\n").map(line => JSON.parse(line));
+    expect(logs.map(item => item.event)).toEqual(["input", "response", "error"]);
+    expect(new Set(logs.map(item => item.request_id)).size).toBe(1);
+    expect(logs[0].data.original_prompt).toBe("Compare them");
+    expect(logs[1].data.content[0].text).toBe(JSON.stringify(result));
+    expect(logs[2].data.message).toContain("missing_options[0].evidence");
+    expect(readFileSync(path, "utf8")).not.toContain("test-key");
+    expect(statSync(path).mode & 0o777).toBe(0o600);
+    process.env.WASABI_DIAGNOSTIC_LOG = join(dir, "missing-parent", "checks.jsonl");
+    await expect(harness(clear).checker.check(h.ctx, "Compare them")).resolves.toBeDefined();
+    delete process.env.WASABI_DIAGNOSTIC_LOG;
+    await expect(harness(clear).checker.check(h.ctx, "Compare them")).resolves.toBeDefined();
+    expect(readFileSync(path, "utf8").trim().split("\n")).toHaveLength(3);
+  } finally {
+    if (previous === undefined) delete process.env.WASABI_DIAGNOSTIC_LOG;
+    else process.env.WASABI_DIAGNOSTIC_LOG = previous;
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
 
 test("complete fenced JSON is accepted with the same evidence validation", () => {
   expect(parseCheckResponse(`\n\x60\x60\x60json\n${JSON.stringify(missing())}\n\x60\x60\x60\n`, conversation)).toEqual(missing());
@@ -164,6 +214,35 @@ test("automatic regeneration shares the call deadline and cannot publish a late 
   } finally { jest.useRealTimers(); }
 });
 
+test("checker labels filtered conversation messages and does not accept off-by-one citations", async () => {
+  const h = harness(clear);
+  const scope = "Wasabi means only extensions/wasabi/.";
+  const question = "Is clarification single-turn or multi-turn?";
+  h.entries.push(
+    { type: "message", message: { role: "user", content: scope } },
+    { type: "message", message: { role: "toolResult", content: "excluded tool result" } },
+    { type: "message", message: { role: "assistant", content: "It is currently single-round." } },
+    { type: "message", message: { role: "user", content: question } },
+  );
+  const request = await h.checker.check(h.ctx, "Add multi-turn assessment to the note.");
+  const payload = h.complete.mock.calls[0][1] as any;
+  const messages = JSON.parse(payload.messages[0].content).conversation_context;
+  expect(messages.map((message: any) => message.message_index)).toEqual([0, 1, 2, 3, 4]);
+  expect(messages[2]).toEqual({ role: "user", text: scope, message_index: 2 });
+  expect(messages[4]).toEqual({ role: "user", text: question, message_index: 4 });
+  expect(payload.systemPrompt).toContain("copy the explicit");
+  expect(payload.systemPrompt).toContain("Do not calculate");
+  expect(payload.systemPrompt).toContain("A user's question is not confirmation");
+  expect(payload.systemPrompt).toContain("Implementation facts described by the assistant are not user decisions");
+  const resolution = { id: "scope", applies_to_request: true, confirmed: true, value: scope,
+    evidence: { message_index: 1, quote: scope } };
+  expect(() => parseCheckResponse(JSON.stringify({ ...clear, option_resolutions: [resolution] }),
+    request.check.conversation_context)).toThrow("option_resolutions[0].evidence: quote is not an exact substring");
+  resolution.evidence.message_index = 2;
+  expect(() => parseCheckResponse(JSON.stringify({ ...clear, option_resolutions: [resolution] }),
+    request.check.conversation_context)).not.toThrow();
+});
+
 test("checker reads only branch conversation text, retaining roles and an extensible source boundary", async () => {
   const h = harness();
   expect(conversationSource.read(h.ctx)).toEqual(conversation);
@@ -172,7 +251,8 @@ test("checker reads only branch conversation text, retaining roles and an extens
     information_sources: ["conversation"], ...missing() });
   const call = h.complete.mock.calls[0][1] as any;
   expect(JSON.parse(call.messages[0].content)).toEqual({ original_prompt: "Compare them",
-    conversation_context: conversation, information_sources: ["conversation"] });
+    conversation_context: conversation.map((message, message_index) => ({ ...message, message_index })),
+    information_sources: ["conversation"] });
   expect(call.tools).toBeUndefined();
   expect(call.systemPrompt).toBe(CHECK_SYSTEM_PROMPT);
   expect(call.systemPrompt).toContain("Even if intent can be inferred");
@@ -537,8 +617,9 @@ test.each([
     "conversation_context", "information_sources", "original_prompt",
   ]);
   expect(JSON.parse(payload.messages[0].content).conversation_context).toEqual([
-    { role: "user", text: scenario.decision }, { role: "assistant", text: scenario.proposal },
-    { role: "user", text: "For a different report, use French." },
+    { role: "user", text: scenario.decision, message_index: 0 },
+    { role: "assistant", text: scenario.proposal, message_index: 1 },
+    { role: "user", text: "For a different report, use French.", message_index: 2 },
   ]);
   expect(payload.tools).toBeUndefined();
   expect(h.complete).toHaveBeenCalledTimes(1);
