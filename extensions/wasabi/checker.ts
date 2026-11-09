@@ -193,7 +193,7 @@ function text(value: unknown): string {
   return value;
 }
 function evidence(value: unknown, conversation: ConversationMessage[], original_prompt: string | undefined, field: string): Evidence {
-  const fail = (reason: string): never => {
+  const fail: (reason: string) => never = (reason) => {
     throw new Error(`Wasabi evidence is not in the conversation: ${field}: ${reason} This is invalid checker output, not missing evidence from your request.`);
   };
   if (!value || typeof value !== "object" || Array.isArray(value)) fail("expected an evidence object.");
@@ -207,7 +207,7 @@ function evidence(value: unknown, conversation: ConversationMessage[], original_
   const source = index === -1 ? original_prompt : conversation[index as number]?.text;
   if (source === undefined) fail("the referenced source is unavailable.");
   if (!source!.includes(quote as string)) fail(`quote is not an exact substring of ${index === -1 ? "original_prompt" : `conversation_context[${index}]`}.`);
-  return { message_index: index as number, quote: quote as string };
+  return { message_index: index, quote: quote };
 }
 
 export function parseCheckResponse(raw: string, conversation: ConversationMessage[], original_prompt?: string): Pick<CheckResult,
