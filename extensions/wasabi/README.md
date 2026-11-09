@@ -57,7 +57,14 @@ Grounded `option_resolutions` record applicability, confirmation, value, and an
 exact evidence quote. Confirmed applicable resolutions are included in review
 without asking again; an option cannot be both confirmed and missing.
 Evidence uses a zero-based conversation index, or -1 for the current input, so
-first-turn requests can also receive concrete proposed alternatives.
+first-turn requests can also receive concrete proposed alternatives. Each message
+in the model input carries an explicit `message_index` to copy into citations;
+indices refer to the filtered conversation text, not raw session entries. Wrong
+indices are still rejected, never silently relocated to matching text elsewhere.
+The checker is instructed that questions do not confirm the facts they ask about,
+and assistant-described implementation facts are not confirmed user decisions.
+These semantic distinctions are model instructions, not a semantic proof enforced
+by the exact-quote validator.
 Users need not list alternatives: for example, **Build a task manager** can prompt
 questions about intended users or interface, and **Research caching** can prompt
 questions about research objective or scope. The model identifies ambiguities
@@ -73,6 +80,32 @@ Wasabi shows all choices and a recommended combination. The user must explicitly
 confirm that combination or choose alternatives; dismissing the dialog confirms
 nothing. These decisions are kept privately in the checker, never appended to the
 main conversation. Requests with no missing options continue normally.
+
+## Checker diagnostics (opt-in)
+
+Evidence validation errors identify the JSON field and distinguish invalid message
+indices, unavailable sources, and non-verbatim quotes. These are errors in the
+checker's output, not a claim that the user supplied insufficient evidence.
+Validation and retry behavior are unchanged.
+
+To capture a reproduction, start Pi with an absolute log path (the parent directory
+must already exist):
+
+```bash
+WASABI_DIAGNOSTIC_LOG="$HOME/wasabi-checks.jsonl" pi
+```
+
+Logging is disabled unless this variable is set. Each JSONL event includes a
+request ID and timestamp. Events record checker input (including conversation and
+system prompt), each model response (including format-regeneration responses),
+and success or error. Provider responses include model/provider identifiers when
+available. API credentials and request headers are not logged.
+
+**Logs contain private conversation text and model output.** Review/redact before
+sharing, do not commit them, and delete them after diagnosis. Files are restricted
+to owner read/write (0600); existing log permissions are also tightened. There is
+no automatic rotation. Logging is best-effort: an unwritable destination does not
+block or bypass checking. Unset the variable and restart Pi to disable logging.
 
 ## Private clarification and final review
 
