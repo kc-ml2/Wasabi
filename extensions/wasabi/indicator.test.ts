@@ -125,13 +125,14 @@ test.each(["dismiss", "error"])("first-use chooser %s clears the enclosing inter
   expect(h.status()).toBeUndefined();
 });
 
-test.each(["Retry", "Send original unchanged", "Cancel request", undefined])(
+test.each(["Approve and send", "Cancel request", undefined])(
   "recovery stays identified through %s and clears only after returning", async action => {
-    const h = harness([action, "Confirm recommended combination", "Approve and send"]);
+    const h = harness([action]);
+    h.ctx.ui.editor.mockResolvedValue("Edited prompt");
     await h.commands["wasabi-model"].handler("p/light", h.ctx);
     h.invoke.mockRejectedValueOnce(new Error("Unavailable"));
-    expect((await h.input()).action).toBe(action === "Retry" || action === "Send original unchanged" ? "transform" : "handled");
-    expect(h.ctx.ui.select.mock.calls[0][0]).toContain("Wasabi · Recovery");
+    expect((await h.input()).action).toBe(action === "Approve and send" ? "transform" : "handled");
+    expect(h.ctx.ui.editor.mock.calls[0][0]).toContain("Review response and edit prompt");
     // Neither recovery nor retry clears the status while the request is held.
     expect(h.ctx.ui.setStatus.mock.calls).toEqual([["wasabi", active], ["wasabi", undefined]]);
     expect(h.status()).toBeUndefined();
@@ -190,6 +191,7 @@ test.each(["timeout", "stop", "finish"])("%s while checking retains the indicato
     const h = harness();
     await h.commands["wasabi-model"].handler("p/light", h.ctx);
     h.invoke.mockImplementationOnce(() => new Promise(() => {}));
+    h.ctx.ui.editor.mockResolvedValue("Original");
     h.ctx.ui.select.mockImplementationOnce(async (_title: string, _items: string[], options: any) => {
       expect(h.status()).toBe(active);
       if (mode === "timeout") return new Promise(resolve => {
@@ -198,7 +200,7 @@ test.each(["timeout", "stop", "finish"])("%s while checking retains the indicato
       return mode === "finish" ? "Finish clarification and review prompt" : "Stop waiting";
     }).mockImplementationOnce(async (title: string) => {
       expect(h.status()).toBe(active);
-      expect(title).toContain(mode === "finish" ? "Review final prompt" : "Recovery");
+      expect(title).toContain(mode === "finish" ? "Review final prompt" : "manual recovery");
       return "Cancel request";
     });
     const input = h.input();
@@ -248,8 +250,9 @@ test("disabled and headless inputs do not install a UI indicator", async () => {
 });
 
 test.each(["Approve and send", "Cancel request"])(
-  "state entry stays identified across recovery and retry until %s completes", async terminal => {
-    const h = harness(["p/light", "Retry", "Finish clarification and review prompt", terminal]);
+  "state entry stays identified across manual recovery until %s completes", async terminal => {
+    const h = harness(["p/light", terminal]);
+    h.ctx.ui.editor.mockResolvedValue("Edited prompt");
     const observed: string[] = [];
     let request: WasabiRequest | undefined;
     const call = WasabiRequest.prototype.call;
@@ -290,7 +293,7 @@ test.each(["Approve and send", "Cancel request"])(
     h.ctx.ui.select.mockImplementation(async (...args: any[]) => {
       const title = args[0] as string;
       if (title.includes("Choose a lightweight model")) observed.push("select_model");
-      if (title.includes("Recovery")) {
+      if (title.includes("manual recovery")) {
         expect(request?.interaction_state).toBe("recovering");
         observed.push("recovering");
       }
@@ -304,7 +307,7 @@ test.each(["Approve and send", "Cancel request"])(
     try {
       expect((await h.input()).action).toBe(terminal === "Approve and send" ? "transform" : "handled");
       expect(observed).toEqual([
-        "select_model", "checking", "recovering", "checking", "clarifying", "reviewing",
+        "select_model", "checking", "recovering",
         terminal === "Approve and send" ? "forwarding" : "cancelled",
       ]);
       expect(h.ctx.ui.setStatus.mock.calls).toEqual([

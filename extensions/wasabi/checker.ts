@@ -169,7 +169,7 @@ Recommendations are proposals requiring explicit user confirmation, never user d
 If nothing remains undecided, return missing_options and recommended_combination empty, retaining applicable resolutions. Match the user's language.`;
 
 export class WasabiResponseFormatError extends Error {
-  constructor(message = "Wasabi received invalid JSON from the checking model. Retry the check or send the original request unchanged.") {
+  constructor(message = "Wasabi received invalid JSON from the checking model. Review the response and edit the prompt manually.") {
     super(message);
     this.name = "WasabiResponseFormatError";
   }
@@ -277,6 +277,16 @@ export function parseCheckResponse(raw: string, conversation: ConversationMessag
     ...(option_resolutions === undefined ? {} : { option_resolutions }) };
 }
 
+export class WasabiCheckFailure extends Error {
+  readonly rawResponse: string;
+
+  constructor(error: unknown, rawResponse: string) {
+    super(error instanceof Error ? error.message : String(error));
+    this.rawResponse = rawResponse;
+    this.name = "WasabiCheckFailure";
+  }
+}
+
 export class WasabiChecker {
   pending: CheckedRequest | undefined;
 
@@ -309,37 +319,31 @@ export class WasabiChecker {
       conversation_context: conversation_context.map((message, message_index) => ({ ...message, message_index })),
       information_sources };
     diagnostic("input", { ...input, systemPrompt: CHECK_SYSTEM_PROMPT });
-    let retryFormat = false;
-    while (true) {
+    {
       if (signal?.aborted) throw new Error("Wasabi call invalidated.");
       const response = await this.model.complete(ctx, {
-        systemPrompt: CHECK_SYSTEM_PROMPT + (retryFormat
-          ? "\nYour previous response was not complete valid JSON. Generate the check again from the input. Return one complete JSON object only, with correctly escaped strings, commas and closed arrays. Keep evidence quotes short and exact. Do not include Markdown or commentary."
-          : ""),
+        systemPrompt: CHECK_SYSTEM_PROMPT,
         messages: [{ role: "user", content: JSON.stringify(input),
           timestamp: Date.now() }],
       }, { signal });
       if (signal?.aborted) throw new Error("Wasabi call invalidated.");
-      diagnostic("response", { retryFormat, stopReason: response.stopReason, errorMessage: response.errorMessage,
+      diagnostic("response", { stopReason: response.stopReason, errorMessage: response.errorMessage,
         content: response.content, model: response.model, provider: response.provider });
-      if (response.stopReason === "error" || response.stopReason === "aborted") {
-        throw new Error(response.errorMessage || "Wasabi checking failed.");
-      }
+      const raw = response.content.filter(part => part.type === "text").map(part => part.text).join("\n");
       try {
-        if (response.stopReason === "length") {
-          throw new WasabiResponseFormatError("Wasabi's checking response was cut off before completion. Retry the check or choose another Wasabi model.");
+        if (response.stopReason === "error" || response.stopReason === "aborted") {
+          throw new Error(response.errorMessage || "Wasabi checking failed.");
         }
-        const raw = response.content.filter(part => part.type === "text").map(part => part.text).join("\n");
+        if (response.stopReason === "length") {
+          throw new WasabiResponseFormatError("Wasabi's checking response was cut off before completion. Review the partial response and edit the prompt manually.");
+        }
         const check = { original_prompt, conversation_context, information_sources,
           ...parseCheckResponse(raw, conversation_context, original_prompt) };
         const request: CheckedRequest = { check };
         this.pending = request;
         return request;
       } catch (error) {
-        if (!(error instanceof WasabiResponseFormatError) || retryFormat) throw error;
-        // One private regeneration shares the request's existing timeout and
-        // cancellation signal. Never silently forward an unchecked prompt.
-        retryFormat = true;
+        throw new WasabiCheckFailure(error, raw);
       }
     }
   }

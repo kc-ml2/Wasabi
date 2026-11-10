@@ -112,21 +112,17 @@ test("complete fenced JSON is accepted with the same evidence validation", () =>
   expect(() => parseCheckResponse(`Commentary ${JSON.stringify(clear)}`, [])).toThrow(WasabiResponseFormatError);
 });
 
-test("a malformed array response is regenerated once using the same input and cancellation signal", async () => {
+test("a malformed array response is preserved without regeneration", async () => {
   const h = harness();
   const signal = new AbortController().signal;
   h.complete.mockResolvedValueOnce({ stopReason: "stop", content: [{ type: "text",
     text: '{"missing_options":[{"id":"scope"} {"id":"format"}],"recommended_combination":[]}' }] });
   const before = [...h.entries];
-  const result = await h.checker.check(h.ctx, "Compare them", signal);
-  expect(result.check.missing_options).toEqual(missing().missing_options);
-  expect(h.complete).toHaveBeenCalledTimes(2);
-  const first = h.complete.mock.calls[0];
-  const retry = h.complete.mock.calls[1];
-  expect((retry[1] as any).messages[0].content).toEqual((first[1] as any).messages[0].content);
-  expect((retry[1] as any).systemPrompt).toContain("previous response was not complete valid JSON");
-  expect(first[2]).toEqual({ signal });
-  expect(retry[2]).toEqual({ signal });
+  await expect(h.checker.check(h.ctx, "Compare them", signal)).rejects.toMatchObject({
+    rawResponse: '{"missing_options":[{"id":"scope"} {"id":"format"}],"recommended_combination":[]}',
+  });
+  expect(h.complete).toHaveBeenCalledTimes(1);
+  expect(h.complete.mock.calls[0][2]).toEqual({ signal });
   expect(h.entries).toEqual(before);
   expect(h.pi.sendUserMessage).not.toHaveBeenCalled();
 });
@@ -135,7 +131,7 @@ test("repeated malformed responses produce an actionable error without an unboun
   const h = harness();
   h.complete.mockResolvedValue({ stopReason: "stop", content: [{ type: "text", text: '{"missing_options":[' }] });
   await expect(h.checker.check(h.ctx, "Compare them")).rejects.toThrow("invalid JSON from the checking model");
-  expect(h.complete).toHaveBeenCalledTimes(2);
+  expect(h.complete).toHaveBeenCalledTimes(1);
   expect(h.checker.pending).toBeUndefined();
 });
 
@@ -145,35 +141,34 @@ test("format failure recovery preserves the original input and never forwards it
   await h.commands["wasabi-model"].handler("p/light", h.ctx);
   const before = [...h.entries];
   h.complete.mockResolvedValue({ stopReason: "stop", content: [{ type: "text", text: '{"missing_options":[' }] });
-  h.ctx.ui.select.mockResolvedValue("Cancel request");
+  h.ctx.ui.editor = jest.fn<any>(async () => undefined);
   expect(await h.events.input({ source: "interactive", text: "Keep this original draft" }, h.ctx))
     .toEqual({ action: "handled" });
-  expect(h.complete).toHaveBeenCalledTimes(2);
-  const [title, actions] = h.ctx.ui.select.mock.calls[0];
-  expect(title).toContain("Wasabi · Recovery");
+  expect(h.complete).toHaveBeenCalledTimes(1);
+  const [title, prefill] = h.ctx.ui.editor.mock.calls[0];
+  expect(title).toContain("Review response and edit prompt");
   expect(title).toContain("invalid JSON from the checking model");
-  expect(title).toContain("Original request:\nKeep this original draft");
-  expect(actions).toEqual(["Retry", "Send original unchanged", "Cancel request"]);
+  expect(prefill).toBe("Keep this original draft");
+  expect(title).toContain('{"missing_options":[');
   expect(h.entries.filter(entry => entry.customType !== "wasabi-model-call")).toEqual(before);
   expect(h.pi.sendUserMessage).not.toHaveBeenCalled();
   expect(h.pi.sendMessage).not.toHaveBeenCalled();
 });
 
-test("truncated output is regenerated even if its text happens to parse", async () => {
+test("truncated output requires review even if its text happens to parse", async () => {
   const h = harness(clear);
   h.complete.mockResolvedValueOnce({ stopReason: "length", content: [{ type: "text", text: JSON.stringify(clear) }] });
-  await expect(h.checker.check(h.ctx, "Compare them")).resolves.toMatchObject({ check: clear });
-  expect(h.complete).toHaveBeenCalledTimes(2);
+  await expect(h.checker.check(h.ctx, "Compare them")).rejects.toMatchObject({ rawResponse: JSON.stringify(clear) });
+  expect(h.complete).toHaveBeenCalledTimes(1);
 });
 
-test("regeneration does not bypass evidence checks or retry provider failures", async () => {
+test("manual recovery does not bypass evidence checks or retry provider failures", async () => {
   const h = harness();
-  h.complete.mockResolvedValueOnce({ stopReason: "stop", content: [{ type: "text", text: "invalid JSON" }] });
   const invented = missing();
   invented.missing_options[0].evidence.quote = "invented";
   h.complete.mockResolvedValueOnce({ stopReason: "stop", content: [{ type: "text", text: JSON.stringify(invented) }] });
   await expect(h.checker.check(h.ctx, "Compare them")).rejects.toThrow("not in the conversation");
-  expect(h.complete).toHaveBeenCalledTimes(2);
+  expect(h.complete).toHaveBeenCalledTimes(1);
   h.complete.mockClear().mockResolvedValue({ stopReason: "error", errorMessage: "provider offline", content: [] });
   await expect(h.checker.check(h.ctx, "Compare them")).rejects.toThrow("provider offline");
   expect(h.complete).toHaveBeenCalledTimes(1);
@@ -190,7 +185,7 @@ test("an aborted malformed response cannot launch regeneration", async () => {
   expect(h.complete).toHaveBeenCalledTimes(1);
 });
 
-test("automatic regeneration shares the call deadline and cannot publish a late result", async () => {
+test("a delayed response cannot publish after the call deadline", async () => {
   jest.useFakeTimers();
   try {
     const h = harness(clear);
@@ -199,8 +194,7 @@ test("automatic regeneration shares the call deadline and cannot publish a late 
     let resolveRetry!: (result: any) => void;
     let started!: () => void;
     const retryStarted = new Promise<void>(resolve => { started = resolve; });
-    h.complete.mockResolvedValueOnce({ stopReason: "stop", content: [{ type: "text", text: "invalid JSON" }] })
-      .mockImplementationOnce(() => new Promise(resolve => { resolveRetry = resolve; started(); }));
+    h.complete.mockImplementationOnce(() => new Promise(resolve => { resolveRetry = resolve; started(); }));
     const pending = state.call(h.ctx, signal => h.checker.check(h.ctx, state.original_prompt, signal), 1000);
     const rejected = expect(pending).rejects.toThrow("waiting stopped");
     await retryStarted;
@@ -210,7 +204,7 @@ test("automatic regeneration shares the call deadline and cannot publish a late 
     await jest.advanceTimersByTimeAsync(0);
     expect(h.checker.pending).toBeUndefined();
     expect(state.forwarded).toBe(false);
-    expect(h.complete).toHaveBeenCalledTimes(2);
+    expect(h.complete).toHaveBeenCalledTimes(1);
   } finally { jest.useRealTimers(); }
 });
 

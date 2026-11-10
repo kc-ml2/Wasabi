@@ -254,17 +254,31 @@ selection offers **Stop waiting** (Esc also stops) and **Finish clarification an
 review prompt**. Finishing opens review immediately with the original request,
 without another model call or unconfirmed suggestions. Settling or invalidating
 the call closes the waiting dialog.
-Timeouts, interruption, invalid responses, and provider errors show the preserved
-original request with **Retry**, **Send original unchanged**, and **Cancel request**.
-If the checking model returns malformed or truncated JSON, Wasabi privately asks
-it to regenerate once within the same 30-second deadline. Complete JSON wrapped
-in a Markdown code block is accepted; incomplete data is never guessed or used.
-If regeneration also fails, recovery explains the response-format problem rather
-than showing a raw JSON parser exception. Evidence and recommendation validation
-still apply to every accepted response.
-Retry retains the same request identity. Sending the original is an explicit
-approval; cancellation sends nothing. Without UI, a failure reports the original
-and holds the input.
+Timeouts, interruption, invalid responses, and provider errors go directly to
+**Review response and edit prompt**, with no automatic retry or JSON regeneration.
+The editor starts with the original request only. Its reference area shows the
+full model text response, marked **unvalidated**, separately from the editable
+prompt. It is never automatically merged into the draft or sent to the main
+agent. Provider failures without text show “No model response was received.”
+Partial/truncated text is reference material too, not an accepted checker result.
+Complete JSON wrapped in a Markdown code block is still accepted; evidence and
+recommendation validation remain unchanged.
+
+Submitting a nonempty edit opens **Review final prompt (manual recovery)** with
+**Approve and send**, **Edit final prompt**, and **Cancel request**. Only explicit
+approval forwards the edited prompt (and original images), without rechecking it.
+Closing either dialog or cancelling sends nothing. To send the original, leave
+it unchanged and explicitly approve it. Session replacement revokes pending
+approval. Without UI, a failure reports the original and holds the input.
+
+RPC clients receive an `editor` request whose title starts with
+`Wasabi · Review response and edit prompt`, with the original as `prefill` and
+unvalidated response in the title. A submitted edit is followed by a `select`
+request starting with `Wasabi · Review final prompt (manual recovery)`.
+Benchmark adapters must handle these dialogs explicitly rather than blindly
+cancel unfamiliar dialogs. Record manual recovery separately from normal checks;
+there is no implicit simulator approval or retry. The benchmark harness lives
+outside this package and must be updated independently.
 
 Errors, timeouts, interruption, retries, cancellation, finishing clarification,
 and completion invalidate the previous call generation and request provider
