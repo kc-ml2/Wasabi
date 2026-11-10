@@ -326,7 +326,7 @@ test.each(["Approve and send", "Cancel request", undefined])(
     expect(ctx.ui.select.mock.calls[5][0]).toContain("Current edited draft");
     expect(invoke).toHaveBeenCalledTimes(1);
     expect(JSON.stringify(entries)).toBe(before);
-    expect(pi.appendEntry).not.toHaveBeenCalled();
+    expect(pi.appendEntry.mock.calls.filter((call: unknown[]) => call[0] !== "wasabi-model-call")).toEqual([]);
     expect(pi.sendMessage).not.toHaveBeenCalled();
     expect(pi.sendUserMessage).not.toHaveBeenCalled();
     decide(decision);
@@ -334,7 +334,7 @@ test.each(["Approve and send", "Cancel request", undefined])(
       ? { action: "transform", text: "Current edited draft", images } : { action: "handled" });
     expect(invoke).toHaveBeenCalledTimes(1);
     expect(JSON.stringify(entries)).toBe(before);
-    expect(pi.appendEntry).not.toHaveBeenCalled();
+    expect(pi.appendEntry.mock.calls.filter((call: unknown[]) => call[0] !== "wasabi-model-call")).toEqual([]);
     expect(pi.sendMessage).not.toHaveBeenCalled();
     expect(pi.sendUserMessage).not.toHaveBeenCalled();
     expect(ctx.ui.setStatus).toHaveBeenLastCalledWith("wasabi", undefined);

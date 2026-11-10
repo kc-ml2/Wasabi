@@ -171,7 +171,7 @@ test("extension commands and ordinary input use the automatic checking configura
   expect(h.ctx.ui.select).not.toHaveBeenCalled();
   await events.input({ source: "interactive", text: "implement it" }, h.ctx);
   expect(h.ctx.ui.select).toHaveBeenCalledTimes(1);
-  expect(h.entries.at(-1).data).toEqual({ enabled: true });
+  expect(h.entries.filter(entry => entry.customType !== "wasabi-model-call").at(-1).data).toEqual({ enabled: true });
   await commands.wasabi.handler("off", h.ctx);
   expect(h.entries.at(-1).data).toEqual({ enabled: false });
   await events.input({ source: "rpc", text: "research it" }, h.ctx);

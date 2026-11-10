@@ -1,5 +1,45 @@
 # Wasabi dedicated model
 
+## Model-call audit log
+
+Every actual dedicated-model invocation automatically appends `wasabi-model-call`
+custom entries to Pi's session JSONL (not the RPC stdout event log). Session
+persistence must be enabled, and benchmark runners must retain the session file.
+These entries are excluded from main-model conversation context.
+
+- `phase: "start"`: schema `version: 1`, unique `callId`, provider, model and timestamp.
+- `phase: "end"`: same identity, timestamp, `durationMs`, status
+  (`success`, `error`, `aborted`), and the complete SDK `response`, including
+  content, usage, stop reason and provider error fields when supplied. Thrown
+  failures instead record an `error` message.
+
+Count **start entries**, not UI answers or both phases. Each retry is a new call.
+Selection/authentication failures before invocation are not counted. This counts
+SDK invocations, not transport-level retries inside a provider. Success means the
+provider returned normally, not that the checker accepted its output: malformed
+checker JSON is retained in full. A start without an end means an unknown outcome
+(e.g. process termination or session replacement), not a successful response.
+Late results after session replacement are not appended to the new session.
+
+```sh
+# Actual Wasabi invocation count across the retained session file
+jq -s '[.[] | select(.type == "custom" and .customType == "wasabi-model-call"
+  and .data.phase == "start")] | length' session.jsonl
+
+# Outputs and failures, correlated by callId
+jq 'select(.type == "custom" and .customType == "wasabi-model-call"
+  and .data.phase == "end") | .data' session.jsonl
+```
+
+Whole-file counts include abandoned branches; filter by the active branch if
+that is the desired metric. Existing sessions cannot recover outputs from calls
+made before this feature was loaded. Reload/restart with the updated extension
+before collecting new runs. No API keys, request headers, environment, or input
+prompts are deliberately logged, but **outputs and provider error messages may
+contain sensitive data**; treat session files as private benchmark artifacts.
+Logs are untruncated and increase session size. Logging failures warn without
+retrying the model call. This feature does not count main-agent or simulator calls.
+
 Use `/wasabi-model` to choose a lightweight model from Pi's authenticated models,
 or `/wasabi-model provider/model-id` to select one explicitly. The user decides
 which model is lightweight; no model IDs or performance thresholds are imposed.

@@ -392,7 +392,7 @@ test.each(["Approve and send", "Cancel request"])(
     expect(await input).toEqual(action === "Approve and send"
       ? { action: "transform", text: draft, images: undefined } : { action: "handled" });
     expect(JSON.stringify(entries)).toBe(before);
-    expect(h.pi.appendEntry).not.toHaveBeenCalled();
+    expect(h.pi.appendEntry.mock.calls.filter(call => call[0] !== "wasabi-model-call")).toEqual([]);
     expect(h.pi.sendMessage).not.toHaveBeenCalled();
     expect(h.pi.sendUserMessage).not.toHaveBeenCalled();
     expect(h.ctx.ui.setStatus).toHaveBeenLastCalledWith("wasabi", undefined);
@@ -475,7 +475,7 @@ test.each([
   reapprove("Approve and send");
   expect(await input).toEqual({ action: "transform", text: edited, images: undefined });
   expect(JSON.stringify(entries)).toBe(before);
-  expect(h.pi.appendEntry).not.toHaveBeenCalled();
+  expect(h.pi.appendEntry.mock.calls.filter(call => call[0] !== "wasabi-model-call")).toEqual([]);
   expect(h.pi.sendMessage).not.toHaveBeenCalled();
   expect(h.pi.sendUserMessage).not.toHaveBeenCalled();
   expect(h.ctx.ui.setStatus).toHaveBeenLastCalledWith("wasabi", undefined);

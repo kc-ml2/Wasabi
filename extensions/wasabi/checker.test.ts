@@ -154,7 +154,7 @@ test("format failure recovery preserves the original input and never forwards it
   expect(title).toContain("invalid JSON from the checking model");
   expect(title).toContain("Original request:\nKeep this original draft");
   expect(actions).toEqual(["Retry", "Send original unchanged", "Cancel request"]);
-  expect(h.entries).toEqual(before);
+  expect(h.entries.filter(entry => entry.customType !== "wasabi-model-call")).toEqual(before);
   expect(h.pi.sendUserMessage).not.toHaveBeenCalled();
   expect(h.pi.sendMessage).not.toHaveBeenCalled();
 });
@@ -353,7 +353,7 @@ test("missing options consume the input and keep confirmation outside the main c
   await h.commands["wasabi-model"].handler("p/light", h.ctx);
   const before = [...h.entries];
   expect(await h.events.input({ source: "interactive", text: "Compare them" }, h.ctx)).toEqual({ action: "handled" });
-  expect(h.entries).toEqual(before);
+  expect(h.entries.filter(entry => entry.customType !== "wasabi-model-call")).toEqual(before);
   expect(h.pi.sendUserMessage).not.toHaveBeenCalled();
   expect(h.pi.sendMessage).not.toHaveBeenCalled();
 });
@@ -436,14 +436,14 @@ test.each([
   } else {
     expect(unresolved).toContain("None identified.");
   }
-  expect(h.entries).toEqual(before);
+  expect(h.entries.filter(entry => entry.customType !== "wasabi-model-call")).toEqual(before);
   expect(h.pi.sendUserMessage).not.toHaveBeenCalled();
   expect(h.pi.sendMessage).not.toHaveBeenCalled();
 
   approve("Approve and send");
   expect(await input).toEqual({ action: "transform", text: finalPrompt });
   expect(h.complete).toHaveBeenCalledTimes(1);
-  expect(h.entries).toEqual(before);
+  expect(h.entries.filter(entry => entry.customType !== "wasabi-model-call")).toEqual(before);
 });
 
 test("current input grounds questions on the first turn without filesystem information", async () => {
@@ -496,7 +496,7 @@ test.each([
   expect(review).toContain(`${scenario.id}: ${scenario.labels[1]}`);
   expect(review).not.toContain(scenario.labels[0]);
   expect(forwarded).toBe(false);
-  expect(h.entries).toEqual(before);
+  expect(h.entries.filter(entry => entry.customType !== "wasabi-model-call")).toEqual(before);
   expect(h.pi.sendUserMessage).not.toHaveBeenCalled();
   const payload = h.complete.mock.calls[0][1] as any;
   expect(JSON.parse(payload.messages[0].content).original_prompt).toBe(scenario.original);
@@ -505,7 +505,7 @@ test.each([
   approve("Approve and send");
   expect(await pending).toEqual({ action: "transform",
     text: `${scenario.original}\n\n- ${scenario.id}: ${scenario.labels[1]}` });
-  expect(h.entries).toEqual(before);
+  expect(h.entries.filter(entry => entry.customType !== "wasabi-model-call")).toEqual(before);
 });
 
 test("generated proposals still require question evidence, distinct choices and valid recommendations", () => {
@@ -623,7 +623,7 @@ test.each([
   ]);
   expect(payload.tools).toBeUndefined();
   expect(h.complete).toHaveBeenCalledTimes(1);
-  expect(h.entries).toEqual(before);
+  expect(h.entries.filter(entry => entry.customType !== "wasabi-model-call")).toEqual(before);
   expect(h.pi.sendUserMessage).not.toHaveBeenCalled();
   expect(h.pi.sendMessage).not.toHaveBeenCalled();
 });
