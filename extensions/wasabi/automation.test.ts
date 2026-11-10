@@ -12,7 +12,7 @@ function harness() {
   };
   const ctx: any = {
     hasUI: true,
-    sessionManager: { getBranch: () => entries },
+    sessionManager: { getSessionId: () => "test-session", getBranch: () => entries },
     modelRegistry: {
       getAvailable: () => [{ provider: "p", id: "light" }, { provider: "p", id: "other" }],
       getApiKeyAndHeaders: async () => ({ ok: true, apiKey: "test-key" }),

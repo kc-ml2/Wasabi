@@ -37,7 +37,7 @@ function harness(result: unknown = missing()) {
   const complete = jest.fn<any>(async () => ({ content: [{ type: "text", text: JSON.stringify(result) }], stopReason: "stop" }));
   const ctx: any = {
     hasUI: true,
-    sessionManager: { getBranch: jest.fn(() => entries) },
+    sessionManager: { getSessionId: () => "test-session", getBranch: jest.fn(() => entries) },
     modelRegistry: {
       getAvailable: () => [{ provider: "p", id: "light" }],
       getApiKeyAndHeaders: async () => ({ ok: true, apiKey: "test-key" }),

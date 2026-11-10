@@ -13,8 +13,9 @@ function harness() {
   const select = jest.fn<any>(async () => "provider/user-chosen-model");
   const ctx: any = {
     hasUI: true,
+    cwd: process.cwd(),
     model: main,
-    sessionManager: { getBranch: () => entries },
+    sessionManager: { getSessionId: () => "test-session", getBranch: () => entries },
     modelRegistry: {
       getAvailable: jest.fn<any>(() => [dedicated, main]),
       getApiKeyAndHeaders: jest.fn<any>(async () => ({
@@ -38,7 +39,7 @@ test("records actual calls and complete outputs without request credentials", as
   h.invoke.mockResolvedValue(response);
   await h.client.complete(h.ctx, { messages: [] });
   const [start, end] = callLogs(h);
-  expect(start).toMatchObject({ version: 1, phase: "start", provider: "provider", model: "user-chosen-model" });
+  expect(start).toMatchObject({ sessionId: "test-session", version: 1, phase: "start", provider: "provider", model: "user-chosen-model" });
   expect(end).toMatchObject({ callId: start.callId, phase: "end", status: "success", response });
   expect(end.durationMs).toBeGreaterThanOrEqual(0);
   expect(JSON.stringify(callLogs(h))).not.toContain("dedicated-key");

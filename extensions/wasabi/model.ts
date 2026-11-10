@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { complete } from "@earendil-works/pi-ai/compat";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import { createCallFileWriter } from "./call-log.ts";
 import { WasabiIndicator } from "./indicator.ts";
 import { selectWasabiModel } from "./model-selector.ts";
 
@@ -107,7 +108,12 @@ export class WasabiModel {
       throw new Error("Wasabi call invalidated.");
     }
     const started = Date.now();
+    const sessionId = ctx.sessionManager.getSessionId();
+    const logDirectory = process.env.WASABI_LOG_DIR;
+    const writeFile = logDirectory?.trim()
+      ? createCallFileWriter(sessionId, ctx.cwd, logDirectory) : undefined;
     const identity = {
+      sessionId,
       version: 1,
       callId: randomUUID(),
       provider: model.provider,
@@ -115,13 +121,16 @@ export class WasabiModel {
     };
     // Custom entries are durable session data, never main-model context.
     const record = (data: Record<string, unknown>) => {
-      if (generation !== this.sessionGeneration) return;
-      try {
-        this.pi.appendEntry(MODEL_CALL_ENTRY_TYPE, { ...identity, ...data });
-      } catch {
-        // Observability must not turn a successful call into a retry.
-        ctx.ui.notify("Wasabi model-call log could not be saved.", "warning");
+      const entry = { ...identity, ...data };
+      const warn = () => {
+        // Neither persistence nor a stale UI may affect provider behavior.
+        try { ctx.ui.notify("Wasabi model-call log could not be saved.", "warning"); } catch { /* stale UI */ }
+      };
+      if (generation === this.sessionGeneration) {
+        try { this.pi.appendEntry(MODEL_CALL_ENTRY_TYPE, entry); } catch { warn(); }
       }
+      // The captured file remains valid even when Pi switches sessions.
+      try { writeFile?.(entry); } catch { warn(); }
     };
     record({ phase: "start", timestamp: new Date(started).toISOString() });
     let response: Awaited<ReturnType<typeof complete>>;

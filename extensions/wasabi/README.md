@@ -7,7 +7,7 @@ custom entries to Pi's session JSONL (not the RPC stdout event log). Session
 persistence must be enabled, and benchmark runners must retain the session file.
 These entries are excluded from main-model conversation context.
 
-- `phase: "start"`: schema `version: 1`, unique `callId`, provider, model and timestamp.
+- `phase: "start"`: schema `version: 1`, Pi `sessionId`, unique `callId`, provider, model and timestamp.
 - `phase: "end"`: same identity, timestamp, `durationMs`, status
   (`success`, `error`, `aborted`), and the complete SDK `response`, including
   content, usage, stop reason and provider error fields when supplied. Thrown
@@ -19,7 +19,8 @@ SDK invocations, not transport-level retries inside a provider. Success means th
 provider returned normally, not that the checker accepted its output: malformed
 checker JSON is retained in full. A start without an end means an unknown outcome
 (e.g. process termination or session replacement), not a successful response.
-Late results after session replacement are not appended to the new session.
+Late results after session replacement are not appended to the new Pi session,
+but are retained in the original session's optional dedicated log.
 
 ```sh
 # Actual Wasabi invocation count across the retained session file
@@ -39,6 +40,45 @@ prompts are deliberately logged, but **outputs and provider error messages may
 contain sensitive data**; treat session files as private benchmark artifacts.
 Logs are untruncated and increase session size. Logging failures warn without
 retrying the model call. This feature does not count main-agent or simulator calls.
+
+### Optional per-session files
+
+Set `WASABI_LOG_DIR` before starting Pi to also append standalone JSONL records:
+
+```sh
+WASABI_LOG_DIR=runs/aes38-first10/wasabi pi ...
+```
+
+Relative directories resolve against the calling session's `ctx.cwd`. Each file
+is named `<sessionId>.wasabi.jsonl` (the ID is URL-encoded for safe filenames).
+The directory is created on the first write. New directories/files request
+permissions 0700/0600; permissions on existing paths are not changed.
+Unset or blank `WASABI_LOG_DIR` leaves file logging disabled.
+
+Each line is the same data object stored in the Pi custom entry, without the
+Pi `type`/`customType`/`data` wrapper. Both sinks share `sessionId` and `callId`;
+do not double-count when combining them. The session ID, destination and call ID
+are captured before invocation, so late successes and failures remain in the
+original file even after switching sessions or changing the environment variable.
+Independent sessions write different files; do not run multiple processes writing
+the same session ID. Writes are synchronous append operations, not a transactional
+or fsync-backed audit store. A write failure warns without stopping the other
+sink or retrying the provider call. Dedicated files also work when Pi session
+persistence is disabled.
+
+```sh
+# Count actual invocations across dedicated session files
+jq -s '[.[] | select(.phase == "start")] | length' runs/aes38-first10/wasabi/*.jsonl
+# Inspect each response with session and call identity
+jq 'select(.phase == "end")' runs/aes38-first10/wasabi/*.jsonl
+```
+
+Benchmark runners should retain these files and record `taskId -> sessionId`
+mappings in their results (allow multiple sessions per task). Wasabi does not
+infer task IDs or modify the benchmark harness. Resuming a session appends to its
+existing file; use a different log directory to separate benchmark runs.
+
+## Model selection
 
 Use `/wasabi-model` to choose a lightweight model from Pi's authenticated models,
 or `/wasabi-model provider/model-id` to select one explicitly. The user decides

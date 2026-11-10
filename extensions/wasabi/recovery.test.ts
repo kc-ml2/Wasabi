@@ -119,7 +119,7 @@ test.each(["retry", "cancel", "finish"])("late provider response after %s cannot
 function harness(actions: string[], invoke: any) {
   const handlers: Record<string, any> = {};
   const commands: Record<string, any> = {};
-  const ctx: any = { hasUI: true, sessionManager: { getBranch: () => [] },
+  const ctx: any = { hasUI: true, sessionManager: { getSessionId: () => "test-session", getBranch: () => [] },
     modelRegistry: { getAvailable: () => [{ provider: "p", id: "light" }],
       getApiKeyAndHeaders: async () => ({ ok: true, apiKey: "key" }) },
     ui: { select: jest.fn<any>(async () => actions.shift()), notify: jest.fn(), setStatus: jest.fn() } };

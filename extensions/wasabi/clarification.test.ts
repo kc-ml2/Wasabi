@@ -86,7 +86,7 @@ test.each([undefined, "Cancel request"])("dismissal or cancellation (%s) during 
 test("input entry point transforms only approved final text; private dialogs never enter session", async () => {
   const ctx = ui(["Confirm recommended combination", "Edit final prompt", "Approve and send"], ["Final approved prompt"]);
   const entries: any[] = [{ type: "message", message: { role: "user", content: "Performance or deployment" } }];
-  ctx.sessionManager = { getBranch: () => entries };
+  ctx.sessionManager = { getSessionId: () => "test-session", getBranch: () => entries };
   ctx.modelRegistry = { getAvailable: () => [{ provider: "p", id: "light" }],
     getApiKeyAndHeaders: async () => ({ ok: true, apiKey: "key" }) };
   const handlers: Record<string, any> = {};
@@ -290,7 +290,7 @@ test.each(["Approve and send", "Cancel request", undefined])(
       "Edit final prompt", "Edit final prompt"]) ctx.ui.select.mockResolvedValueOnce(action);
     ctx.ui.select.mockImplementationOnce(() => new Promise(resolve => { decide = resolve; }));
     const entries = [{ type: "message", message: { role: "user", content: "Performance or deployment. Use Kotlin for this task." } }];
-    ctx.sessionManager = { getBranch: () => entries };
+    ctx.sessionManager = { getSessionId: () => "test-session", getBranch: () => entries };
     ctx.modelRegistry = { getAvailable: () => [{ provider: "p", id: "light" }],
       getApiKeyAndHeaders: async () => ({ ok: true, apiKey: "key" }) };
     const handlers: Record<string, any> = {};
