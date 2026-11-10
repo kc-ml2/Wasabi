@@ -122,7 +122,7 @@ function harness(actions: string[], invoke: any) {
   const ctx: any = { hasUI: true, sessionManager: { getSessionId: () => "test-session", getBranch: () => [] },
     modelRegistry: { getAvailable: () => [{ provider: "p", id: "light" }],
       getApiKeyAndHeaders: async () => ({ ok: true, apiKey: "key" }) },
-    ui: { select: jest.fn<any>(async () => actions.shift()), notify: jest.fn(), setStatus: jest.fn() } };
+    ui: { editor: jest.fn<any>(async (_title: string, prefill: string) => prefill), select: jest.fn<any>(async () => actions.shift()), notify: jest.fn(), setStatus: jest.fn() } };
   const pi = { on: (name: string, fn: any) => { handlers[name] = fn; },
     registerCommand: (name: string, command: any) => { commands[name] = command; }, appendEntry: jest.fn(),
     sendMessage: jest.fn(), sendUserMessage: jest.fn() };
@@ -130,22 +130,23 @@ function harness(actions: string[], invoke: any) {
   return { ctx, handlers, commands, pi };
 }
 
-test.each(["Send original unchanged", "Cancel request"])("provider errors preserve original and support %s", async action => {
+test.each(["Approve and send", "Cancel request"])("provider errors preserve original and support %s", async action => {
   const h = harness([action], jest.fn<any>(async () => { throw new Error("provider failed"); }));
   await h.commands["wasabi-model"].handler("p/light", h.ctx);
   const images: any[] = [];
   expect(await h.handlers.input({ source: "interactive", text: "Exact original", images }, h.ctx))
     .toEqual(action === "Cancel request" ? { action: "handled" } : { action: "transform", text: "Exact original", images });
   expect(h.ctx.ui.select.mock.calls[0][0]).toContain("Exact original");
-  expect(h.ctx.ui.select.mock.calls[0][1]).toEqual(["Retry", "Send original unchanged", "Cancel request"]);
+  expect(h.ctx.ui.editor.mock.calls[0][1]).toBe("Exact original");
+  expect(h.ctx.ui.select.mock.calls[0][1]).toEqual(["Approve and send", "Edit final prompt", "Cancel request"]);
 });
 
-test("retry checks the same original and delivers once", async () => {
+test("manual recovery delivers once without retrying", async () => {
   const invoke = jest.fn<any>().mockRejectedValueOnce(new Error("failed")).mockResolvedValueOnce(response);
-  const h = harness(["Retry"], invoke);
+  const h = harness(["Approve and send"], invoke);
   await h.commands["wasabi-model"].handler("p/light", h.ctx);
-  expect(await h.handlers.input({ source: "interactive", text: "Original" }, h.ctx)).toEqual({ action: "continue" });
-  expect(invoke).toHaveBeenCalledTimes(2);
+  expect(await h.handlers.input({ source: "interactive", text: "Original" }, h.ctx)).toEqual({ action: "transform", text: "Original", images: undefined });
+  expect(invoke).toHaveBeenCalledTimes(1);
   for (const call of invoke.mock.calls) expect(JSON.parse((call[1] as any).messages[0].content).original_prompt).toBe("Original");
   const state = new WasabiRequest("Original");
   expect(state.forward("Approved")).toBe("Approved");
@@ -153,25 +154,25 @@ test("retry checks the same original and delivers once", async () => {
   expect(state.failure).toBeUndefined();
 });
 
-test("timed-out input retries while obsolete completion cannot forward", async () => {
+test("timed-out input enters manual recovery while obsolete completion cannot forward", async () => {
   jest.useFakeTimers();
   let late!: (value: any) => void;
   const invoke = jest.fn<any>().mockImplementationOnce(() => new Promise(resolve => { late = resolve; }))
     .mockResolvedValueOnce(response);
-  const h = harness(["Keep waiting", "Retry"], invoke);
+  const h = harness([], invoke);
   // Leave the waiting selector open until the timeout closes it.
   h.ctx.ui.select.mockImplementationOnce((_title: string, _items: string[], opts: any) => new Promise(resolve => {
     opts.signal.addEventListener("abort", () => resolve(undefined));
-  })).mockResolvedValueOnce("Retry");
+  })).mockResolvedValueOnce("Approve and send");
   await h.commands["wasabi-model"].handler("p/light", h.ctx);
   const pending = h.handlers.input({ source: "interactive", text: "Original" }, h.ctx);
   await jest.advanceTimersByTimeAsync(CALL_TIMEOUT_MS);
-  expect(await pending).toEqual({ action: "continue" });
-  expect(invoke).toHaveBeenCalledTimes(2);
+  expect(await pending).toEqual({ action: "transform", text: "Original", images: undefined });
+  expect(invoke).toHaveBeenCalledTimes(1);
   expect((invoke.mock.calls[0][2] as any).signal.aborted).toBe(true);
   late(response);
   await Promise.resolve();
-  expect(invoke).toHaveBeenCalledTimes(2);
+  expect(invoke).toHaveBeenCalledTimes(1);
 });
 
 test("authentication resolving after cancellation cannot launch a provider call", async () => {
@@ -542,7 +543,7 @@ test.each(["checking", "clarifying"] as const)(
 
 for (const kind of ["timeout", "interrupted"] as const) {
   for (const settlement of ["resolve", "reject"] as const) {
-    test.each(["Retry", "Send original unchanged", "Cancel request"])(
+    test.each(["Approve and send", "Cancel request"]) (
       `${kind}: obsolete ${settlement} cannot change held recovery or its %s decision`, async action => {
         jest.useFakeTimers();
         let resolve!: (value: any) => void;
@@ -567,9 +568,9 @@ for (const kind of ["timeout", "interrupted"] as const) {
         expect(invoke).toHaveBeenCalledTimes(1);
         expect((invoke.mock.calls[0][2] as any).signal.aborted).toBe(true);
         const recovery = h.ctx.ui.select.mock.calls[1];
-        expect(recovery[0]).toContain("Recovery");
+        expect(recovery[0]).toContain("manual recovery");
         expect(recovery[0]).toContain("Preserve exactly");
-        expect(recovery[1]).toEqual(["Retry", "Send original unchanged", "Cancel request"]);
+        expect(recovery[1]).toEqual(["Approve and send", "Edit final prompt", "Cancel request"]);
         if (settlement === "resolve") resolve(response);
         else reject(new Error("Obsolete provider failure"));
         await jest.advanceTimersByTimeAsync(0);
@@ -577,10 +578,9 @@ for (const kind of ["timeout", "interrupted"] as const) {
         expect(h.ctx.ui.select).toHaveBeenCalledTimes(2);
         expect(invoke).toHaveBeenCalledTimes(1);
         recover(action);
-        expect(await pending).toEqual(action === "Retry" ? { action: "continue" }
-          : action === "Cancel request" ? { action: "handled" }
+        expect(await pending).toEqual(action === "Cancel request" ? { action: "handled" }
             : { action: "transform", text: "Preserve exactly", images: undefined });
-        expect(invoke).toHaveBeenCalledTimes(action === "Retry" ? 2 : 1);
+        expect(invoke).toHaveBeenCalledTimes(1);
         expect(h.ctx.ui.setStatus).toHaveBeenLastCalledWith("wasabi", undefined);
         // Subsequent input has its own authority and cannot resurrect the old request.
         expect(await h.handlers.input({ source: "interactive", text: "Next request" }, h.ctx))
