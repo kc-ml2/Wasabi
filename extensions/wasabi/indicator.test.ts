@@ -19,7 +19,7 @@ function harness(actions: (string | undefined)[] = []) {
   let status: string | undefined;
   const ctx: any = {
     hasUI: true,
-    sessionManager: { getBranch: () => [{ type: "message", message: { role: "user", content: "Speed or cost" } }] },
+    sessionManager: { getSessionId: () => "test-session", getBranch: () => [{ type: "message", message: { role: "user", content: "Speed or cost" } }] },
     modelRegistry: { getAvailable: () => [{ provider: "p", id: "light" }],
       getApiKeyAndHeaders: async () => ({ ok: true, apiKey: "key" }) },
     ui: {

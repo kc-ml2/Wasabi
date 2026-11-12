@@ -86,7 +86,7 @@ test.each([undefined, "Cancel request"])("dismissal or cancellation (%s) during 
 test("input entry point transforms only approved final text; private dialogs never enter session", async () => {
   const ctx = ui(["Confirm recommended combination", "Edit final prompt", "Approve and send"], ["Final approved prompt"]);
   const entries: any[] = [{ type: "message", message: { role: "user", content: "Performance or deployment" } }];
-  ctx.sessionManager = { getBranch: () => entries };
+  ctx.sessionManager = { getSessionId: () => "test-session", getBranch: () => entries };
   ctx.modelRegistry = { getAvailable: () => [{ provider: "p", id: "light" }],
     getApiKeyAndHeaders: async () => ({ ok: true, apiKey: "key" }) };
   const handlers: Record<string, any> = {};
@@ -290,7 +290,7 @@ test.each(["Approve and send", "Cancel request", undefined])(
       "Edit final prompt", "Edit final prompt"]) ctx.ui.select.mockResolvedValueOnce(action);
     ctx.ui.select.mockImplementationOnce(() => new Promise(resolve => { decide = resolve; }));
     const entries = [{ type: "message", message: { role: "user", content: "Performance or deployment. Use Kotlin for this task." } }];
-    ctx.sessionManager = { getBranch: () => entries };
+    ctx.sessionManager = { getSessionId: () => "test-session", getBranch: () => entries };
     ctx.modelRegistry = { getAvailable: () => [{ provider: "p", id: "light" }],
       getApiKeyAndHeaders: async () => ({ ok: true, apiKey: "key" }) };
     const handlers: Record<string, any> = {};
@@ -326,7 +326,7 @@ test.each(["Approve and send", "Cancel request", undefined])(
     expect(ctx.ui.select.mock.calls[5][0]).toContain("Current edited draft");
     expect(invoke).toHaveBeenCalledTimes(1);
     expect(JSON.stringify(entries)).toBe(before);
-    expect(pi.appendEntry).not.toHaveBeenCalled();
+    expect(pi.appendEntry.mock.calls.filter((call: unknown[]) => call[0] !== "wasabi-model-call")).toEqual([]);
     expect(pi.sendMessage).not.toHaveBeenCalled();
     expect(pi.sendUserMessage).not.toHaveBeenCalled();
     decide(decision);
@@ -334,7 +334,7 @@ test.each(["Approve and send", "Cancel request", undefined])(
       ? { action: "transform", text: "Current edited draft", images } : { action: "handled" });
     expect(invoke).toHaveBeenCalledTimes(1);
     expect(JSON.stringify(entries)).toBe(before);
-    expect(pi.appendEntry).not.toHaveBeenCalled();
+    expect(pi.appendEntry.mock.calls.filter((call: unknown[]) => call[0] !== "wasabi-model-call")).toEqual([]);
     expect(pi.sendMessage).not.toHaveBeenCalled();
     expect(pi.sendUserMessage).not.toHaveBeenCalled();
     expect(ctx.ui.setStatus).toHaveBeenLastCalledWith("wasabi", undefined);

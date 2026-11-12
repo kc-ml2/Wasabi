@@ -1,5 +1,5 @@
 import { jest } from "@jest/globals";
-import { MODEL_ENTRY_TYPE, WasabiModel } from "./model.ts";
+import { MODEL_CALL_ENTRY_TYPE, MODEL_ENTRY_TYPE, WasabiModel } from "./model.ts";
 import wasabi from "./index.ts";
 
 function harness() {
@@ -13,8 +13,9 @@ function harness() {
   const select = jest.fn<any>(async () => "provider/user-chosen-model");
   const ctx: any = {
     hasUI: true,
+    cwd: process.cwd(),
     model: main,
-    sessionManager: { getBranch: () => entries },
+    sessionManager: { getSessionId: () => "test-session", getBranch: () => entries },
     modelRegistry: {
       getAvailable: jest.fn<any>(() => [dedicated, main]),
       getApiKeyAndHeaders: jest.fn<any>(async () => ({
@@ -27,6 +28,73 @@ function harness() {
   const client = new WasabiModel(pi as any, invoke);
   return { client, ctx, pi, entries, invoke, select, dedicated, main };
 }
+
+const callLogs = (h: ReturnType<typeof harness>) => h.entries
+  .filter(entry => entry.customType === MODEL_CALL_ENTRY_TYPE).map(entry => entry.data);
+
+test("records actual calls and complete outputs without request credentials", async () => {
+  const h = harness();
+  const response = { content: [{ type: "text", text: "raw output" }], stopReason: "stop",
+    usage: { input: 10, output: 5 } };
+  h.invoke.mockResolvedValue(response);
+  await h.client.complete(h.ctx, { messages: [] });
+  const [start, end] = callLogs(h);
+  expect(start).toMatchObject({ sessionId: "test-session", version: 1, phase: "start", provider: "provider", model: "user-chosen-model" });
+  expect(end).toMatchObject({ callId: start.callId, phase: "end", status: "success", response });
+  expect(end.durationMs).toBeGreaterThanOrEqual(0);
+  expect(JSON.stringify(callLogs(h))).not.toContain("dedicated-key");
+  expect(JSON.stringify(callLogs(h))).not.toContain("x-auth");
+});
+
+test.each(["error", "aborted"])("records returned %s responses without discarding output", async stopReason => {
+  const h = harness();
+  h.invoke.mockResolvedValue({ stopReason, content: [], errorMessage: "provider failure" });
+  await h.client.complete(h.ctx, { messages: [] });
+  expect(callLogs(h)[1]).toMatchObject({ status: stopReason,
+    response: { stopReason, errorMessage: "provider failure" } });
+});
+
+test("records thrown failures and counts retries separately", async () => {
+  const h = harness();
+  const failure = new Error("provider failed");
+  h.invoke.mockRejectedValueOnce(failure);
+  await expect(h.client.complete(h.ctx, { messages: [] })).rejects.toBe(failure);
+  await h.client.complete(h.ctx, { messages: [] });
+  const logs = callLogs(h);
+  expect(logs).toHaveLength(4);
+  expect(logs[1]).toMatchObject({ status: "error", error: "provider failed", callId: logs[0].callId });
+  expect(logs[2].callId).not.toBe(logs[0].callId);
+});
+
+test("preflight failures are not counted as model calls", async () => {
+  const h = harness();
+  h.ctx.modelRegistry.getApiKeyAndHeaders.mockResolvedValue({ ok: false });
+  await expect(h.client.complete(h.ctx, { messages: [] })).rejects.toThrow("Authentication");
+  expect(callLogs(h)).toEqual([]);
+});
+
+test("late responses do not write into a replaced session", async () => {
+  const h = harness();
+  let finish!: (value: any) => void;
+  h.invoke.mockImplementation(() => new Promise(resolve => { finish = resolve; }));
+  await h.client.select(h.ctx, "provider/user-chosen-model");
+  const pending = h.client.complete(h.ctx, { messages: [] });
+  await Promise.resolve();
+  expect(callLogs(h)).toHaveLength(1);
+  h.client.restore(h.ctx);
+  finish({ content: [], stopReason: "stop" });
+  await pending;
+  expect(callLogs(h)).toHaveLength(1);
+});
+
+test("logging failure does not retry or discard a successful response", async () => {
+  const h = harness();
+  await h.client.select(h.ctx, "provider/user-chosen-model");
+  h.pi.appendEntry.mockImplementation(() => { throw new Error("disk full"); });
+  await expect(h.client.complete(h.ctx, { messages: [] })).resolves.toEqual({ content: [] });
+  expect(h.invoke).toHaveBeenCalledTimes(1);
+  expect(h.ctx.ui.notify).toHaveBeenCalledWith(expect.stringContaining("log could not"), "warning");
+});
 
 const checking = { systemPrompt: "Check request", messages: [] };
 const clarification = { systemPrompt: "Clarify request", messages: [] };

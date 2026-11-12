@@ -1,13 +1,17 @@
+import { randomUUID } from "node:crypto";
 import { complete } from "@earendil-works/pi-ai/compat";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import { createCallFileWriter } from "./call-log.ts";
 import { WasabiIndicator } from "./indicator.ts";
 import { selectWasabiModel } from "./model-selector.ts";
 
 export const MODEL_ENTRY_TYPE = "wasabi-model";
+export const MODEL_CALL_ENTRY_TYPE = "wasabi-model-call";
 
 /** One explicitly selected model shared by checking and clarification calls. */
 export class WasabiModel {
   private key: string | undefined;
+  private sessionGeneration = 0;
   private selection: Promise<boolean> | undefined;
   private selectionGeneration = 0;
   private leaveSelection: (() => void) | undefined;
@@ -29,6 +33,7 @@ export class WasabiModel {
   get selectedKey(): string | undefined { return this.key; }
 
   restore(ctx: ExtensionContext): void {
+    this.sessionGeneration++;
     this.leaveSelection?.();
     this.leaveSelection = undefined;
     this.selectionGeneration++;
@@ -89,6 +94,7 @@ export class WasabiModel {
     conversation: Parameters<typeof complete>[1],
     options: Parameters<typeof complete>[2] = {},
   ): ReturnType<typeof complete> {
+    const generation = this.sessionGeneration;
     if (!this.key && !await this.select(ctx)) {
       throw new Error("Select a dedicated Wasabi model before checking or clarification.");
     }
@@ -98,12 +104,55 @@ export class WasabiModel {
     if (!model) throw new Error(`Selected Wasabi model is unavailable: ${this.key}`);
     const auth = await ctx.modelRegistry.getApiKeyAndHeaders(model);
     if (!auth.ok) throw new Error("Authentication unavailable for the selected Wasabi model.");
-    if (options?.signal?.aborted) throw new Error("Wasabi call invalidated.");
-    return this.invoke(model, conversation, {
-      ...options,
-      apiKey: auth.apiKey,
-      headers: { ...options?.headers, ...auth.headers },
-      env: auth.env,
-    });
+    if (options?.signal?.aborted || generation !== this.sessionGeneration) {
+      throw new Error("Wasabi call invalidated.");
+    }
+    const started = Date.now();
+    const sessionId = ctx.sessionManager.getSessionId();
+    const logDirectory = process.env.WASABI_LOG_DIR;
+    const writeFile = logDirectory?.trim()
+      ? createCallFileWriter(sessionId, ctx.cwd, logDirectory) : undefined;
+    const identity = {
+      sessionId,
+      version: 1,
+      callId: randomUUID(),
+      provider: model.provider,
+      model: model.id,
+    };
+    // Custom entries are durable session data, never main-model context.
+    const record = (data: Record<string, unknown>) => {
+      const entry = { ...identity, ...data };
+      const warn = () => {
+        // Neither persistence nor a stale UI may affect provider behavior.
+        try { ctx.ui.notify("Wasabi model-call log could not be saved.", "warning"); } catch { /* stale UI */ }
+      };
+      if (generation === this.sessionGeneration) {
+        try { this.pi.appendEntry(MODEL_CALL_ENTRY_TYPE, entry); } catch { warn(); }
+      }
+      // The captured file remains valid even when Pi switches sessions.
+      try { writeFile?.(entry); } catch { warn(); }
+    };
+    record({ phase: "start", timestamp: new Date(started).toISOString() });
+    let response: Awaited<ReturnType<typeof complete>>;
+    try {
+      response = await this.invoke(model, conversation, {
+        ...options,
+        apiKey: auth.apiKey,
+        headers: { ...options?.headers, ...auth.headers },
+        env: auth.env,
+      });
+    } catch (error) {
+      record({ phase: "end", timestamp: new Date().toISOString(),
+        durationMs: Date.now() - started,
+        status: options?.signal?.aborted ? "aborted" : "error",
+        error: error instanceof Error ? error.message : String(error) });
+      throw error;
+    }
+    record({ phase: "end", timestamp: new Date().toISOString(),
+      durationMs: Date.now() - started,
+      status: response.stopReason === "error" ? "error"
+        : response.stopReason === "aborted" ? "aborted" : "success",
+      response });
+    return response;
   }
 }
