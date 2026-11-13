@@ -1,7 +1,6 @@
 import { complete, type UserMessage } from "@earendil-works/pi-ai/compat";
 import { isToolCallEventType, type ExtensionAPI, type ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { createDiffHighlights, previewEdit, selectDiffExcerpt } from "./crunch-diff.ts";
-import { liteLLMSessionHeaders } from "../../src/litellm-session.ts";
 
 const SYSTEM_PROMPT = `You summarize proposed file changes for a human reviewer.
 Describe what the change does in exactly one concise Korean sentence.
@@ -268,10 +267,7 @@ export default function crunchExtension(pi: ExtensionAPI, summarize: typeof comp
             { systemPrompt: numberedDiff ? DIFF_SYSTEM_PROMPT : SYSTEM_PROMPT, messages: [message] },
             {
               apiKey: auth.apiKey,
-              headers: {
-                ...auth.headers,
-                ...liteLLMSessionHeaders(model.provider, ctx.sessionManager.getSessionId()),
-              },
+              headers: { ...auth.headers },
               env: auth.env,
               maxTokens: numberedDiff ? 400 : 100,
               signal: ctx.signal

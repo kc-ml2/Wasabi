@@ -2,7 +2,7 @@
   "name": "pi-wasabi",
   "version": "0.0.1",
   "private": true,
-  "description": "Pi workflow extensions for session cropping, LiteLLM tracking, and Crunch file-change review.",
+  "description": "Pi workflow extensions for session cropping and Crunch file-change review.",
   "type": "module",
   "keywords": [
     "pi-package"
@@ -13,7 +13,6 @@
   "pi": {
     "extensions": [
       "./extensions/wasabi/index.ts",
-      "./extensions/litellm-session/index.ts",
       "./extensions/crop/index.ts",
       "./extensions/crunch/index.ts"
     ]
