@@ -1,7 +1,8 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { WasabiModel } from "./model.ts";
 import { WasabiAutomation } from "./automation.ts";
-import { createReviewRequest, WasabiChecker } from "./checker.ts";
+import { createReviewRequest, WasabiChecker, WasabiCheckFailure } from "./checker.ts";
+import { reviewFailedResponse } from "./response-review.ts";
 import { complete } from "@earendil-works/pi-ai/compat";
 import { WasabiRequest, WasabiReviewRequested } from "./recovery.ts";
 import { reviewClarification } from "./clarification.ts";
@@ -63,15 +64,13 @@ export default function wasabi(pi: ExtensionAPI, invoke: typeof complete = compl
               state.cancel();
               break;
             }
-            const action = await ctx.ui.select(
-              `Wasabi · Recovery\n${state.failure?.message ?? String(error)}\n\nOriginal request:\n${state.original_prompt}`,
-              ["Retry", "Send original unchanged", "Cancel request"],
-            );
-            if (state.cancelled || state.forwarded) break;
             state.invalidate();
-            if (action === "Retry") continue;
-            if (action === "Send original unchanged") {
-              const claimed = state.forward(state.original_prompt);
+            const finalPrompt = await reviewFailedResponse(ctx, state.original_prompt,
+              error instanceof WasabiCheckFailure ? error.rawResponse : undefined,
+              state.failure?.message ?? String(error), () => !state.cancelled && !state.forwarded);
+            if (state.cancelled || state.forwarded) break;
+            if (finalPrompt !== undefined) {
+              const claimed = state.forward(finalPrompt);
               if (claimed !== undefined) return { action: "transform", text: claimed, images: event.images };
             }
             state.cancel();

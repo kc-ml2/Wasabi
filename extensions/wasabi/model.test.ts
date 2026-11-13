@@ -154,31 +154,28 @@ test.each(["interactive", "rpc"])("dismissed first %s chooser makes no checker c
   expect(h.invoke.mock.calls[0][0]).toBe(h.dedicated);
 });
 
-test.each(["unavailable", "authentication"])("%s dedicated model enters recovery and retries without main-model fallback", async failure => {
+test.each(["unavailable", "authentication"])("%s dedicated model enters manual recovery without main-model fallback", async failure => {
   const h = extensionHarness();
   await h.commands["wasabi-model"].handler("provider/user-chosen-model", h.ctx);
   if (failure === "unavailable") h.ctx.modelRegistry.getAvailable.mockReturnValue([h.main]);
   else h.ctx.modelRegistry.getApiKeyAndHeaders.mockResolvedValue({ ok: false });
   h.ctx.model = h.main;
-  h.select.mockImplementation(async (title: string, choices: string[]) => {
-    expect(title).toContain("Wasabi · Recovery");
-    expect(title).toContain("Original request:\nResearch the alternatives");
-    expect(choices).toEqual(["Retry", "Send original unchanged", "Cancel request"]);
+  h.ctx.ui.editor = jest.fn<any>(async (title: string, prefill: string) => {
+    expect(title).toContain("Review response and edit prompt");
+    expect(prefill).toBe("Research the alternatives");
     expect(h.invoke).not.toHaveBeenCalled();
     expect(h.entries.filter(entry => entry.customType === MODEL_ENTRY_TYPE)).toHaveLength(1);
     h.ctx.model = { provider: "other", id: "changed-during-recovery" };
     h.ctx.modelRegistry.getAvailable.mockReturnValue([h.main, h.dedicated]);
     h.ctx.modelRegistry.getApiKeyAndHeaders.mockResolvedValue({ ok: true, apiKey: "recovered-key" });
-    return "Retry";
+    return undefined;
   });
   expect(await h.events.input({ source: "interactive", text: "Research the alternatives" }, h.ctx))
-    .toEqual({ action: "continue" });
-  expect(h.select).toHaveBeenCalledTimes(1);
-  expect(h.invoke).toHaveBeenCalledTimes(1);
-  expect(h.invoke).toHaveBeenCalledWith(h.dedicated, expect.anything(),
-    expect.objectContaining({ apiKey: "recovered-key" }));
+    .toEqual({ action: "handled" });
+  expect(h.ctx.ui.editor).toHaveBeenCalledTimes(1);
+  expect(h.invoke).not.toHaveBeenCalled();
   expect(h.ctx.modelRegistry.getApiKeyAndHeaders.mock.calls.map((call: any[]) => call[0]))
-    .toEqual(failure === "authentication" ? [h.dedicated, h.dedicated] : [h.dedicated]);
+    .toEqual(failure === "authentication" ? [h.dedicated] : []);
 });
 
 test.each(["interactive", "rpc"])("%s input shares a pending model command without using the main model", async source => {
