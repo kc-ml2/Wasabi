@@ -54,7 +54,7 @@ extensions/
     crop.ts
     crop.test.ts
     README.md
-  litellm-session/
+  crunch/
     index.ts
     README.md
 package.json

@@ -1,6 +1,6 @@
 # Wasabi
 
-Wasabi is a [Pi](https://github.com/earendil-works/pi) extension package with private prompt clarification, session cropping, LiteLLM session tracking, and Crunch file-change review. Each extension can be enabled independently with `pi config`.
+Wasabi is a [Pi](https://github.com/earendil-works/pi) extension package with private prompt clarification, session cropping, and Crunch file-change review. Each extension can be enabled independently with `pi config`.
 
 ## Requirements
 
@@ -77,4 +77,3 @@ questions stay private, and the final prompt is reviewed before sending.
 
 - [Crop](extensions/crop/README.md) copies a selected user turn and its suffix into a new session with `/crop`.
 - [Crunch](extensions/crunch/README.md) reviews proposed file changes with `/crunch on` and a separate `/crunch-model`.
-- [LiteLLM session tracking](extensions/litellm-session/README.md) groups provider requests by Pi session ID.
