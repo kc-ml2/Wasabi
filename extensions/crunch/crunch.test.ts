@@ -132,7 +132,7 @@ test("shutdown discards a queued restart", async () => {
   assert.equal(h.messages.length, 0);
 });
 
-test("summary uses its own selected model and LiteLLM session headers", async () => {
+test("summary uses its own selected model and preserves only authentication headers", async () => {
   const h = createHarness();
   h.ctx.model = { provider: "anthropic", id: "conversation-model" };
   h.entries.push({ type: "custom", customType: "crunch-model", data: { key: "openai/summary-model" } });
@@ -144,14 +144,13 @@ test("summary uses its own selected model and LiteLLM session headers", async ()
   const [model, , options] = h.summarize.mock.calls[0];
   assert.equal(model.provider, "openai");
   assert.equal(model.id, "summary-model");
-  assert.equal(options.headers["x-existing"], "keep");
-  assert.equal(options.headers["x-litellm-session-id"], "test-session");
+  assert.deepEqual(options.headers, { "x-existing": "keep" });
   assert.ok(options.signal instanceof AbortSignal);
   assert.equal(h.statuses.get("crunch-summary"), undefined);
   await h.commands["crunch-model"].handler("current", h.ctx);
   await h.emit("tool_call", a);
   assert.equal(h.summarize.mock.calls.at(-1)![0], h.ctx.model);
-  assert.equal(h.summarize.mock.calls.at(-1)![2].headers["x-litellm-session-id"], undefined);
+  assert.deepEqual(h.summarize.mock.calls.at(-1)![2].headers, { "x-existing": "keep" });
 });
 
 test("missing model, auth failure and summary errors retain the approval gate", async () => {

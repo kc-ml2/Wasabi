@@ -86,14 +86,10 @@ session history. Reloading restores the normal full-diff display for old calls.
   are sent to the selected summary provider. Pick an appropriate provider for
   sensitive source code. The normal Pi footer still shows the **conversation**
   model, not the separate summary model; Crunch displays `Summarizing…`.
-- Nested summaries do not pass through Pi's provider hooks. Crunch explicitly
-  applies Wasabi's shared `x-litellm-session-id` policy to `centinels` and `openai`
-  summary providers, while preserving other authentication headers. PR #1 added
-  the conversation hook, and PR #2 added `openai` support. Crunch reuses that
-  policy for its separate summary calls; the existing conversation behavior is
-  unchanged. The shared helper is in `src/litellm-session.ts`. The header groups
-  provider requests in LiteLLM; it does not add summaries to Pi's conversation
-  history or account for their usage in Pi's session totals.
+- Nested summaries do not pass through Pi's provider hooks. Crunch preserves
+  authentication headers but does not inject session-tracking headers. These
+  calls do not add summaries to Pi's conversation history or account for their
+  usage in Pi's session totals.
 
 ### Local testing
 
