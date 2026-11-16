@@ -67,6 +67,14 @@ This command does not call a model or persist session state.
 
 ## Clarify a request with Wasabi
 
+![Wasabi clarification flow: the ambiguous prompt "Run the experiment" is checked by a
+separate Wasabi model, which reports "Prompt lacks clarity!" and asks private questions
+("Do you mean Experiment 4?", "Where should I save the results?") that the user answers
+before the prompt reaches the main LLM](assets/Wasabi-flow.svg)
+
+*Wasabi checks an ordinary prompt with its dedicated model, flags the missing detail
+privately, and folds the user's answers into the prompt before it reaches the main model.*
+
 [Wasabi prompt clarification](extensions/wasabi/README.md) checks ordinary inputs
 against the existing conversation using a separately selected model. The first
 input opens the dedicated model chooser; `/wasabi-model` changes that selection.
