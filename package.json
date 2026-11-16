@@ -2,6 +2,7 @@
   "name": "pi-wasabi",
   "version": "0.0.1",
   "private": true,
+  "license": "MIT",
   "description": "Pi workflow extensions for session cropping and Crunch file-change review.",
   "type": "module",
   "keywords": [

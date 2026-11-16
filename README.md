@@ -85,3 +85,9 @@ questions stay private, and the final prompt is reviewed before sending.
 
 - [Crop](extensions/crop/README.md) copies a selected user turn and its suffix into a new session with `/crop`.
 - [Crunch](extensions/crunch/README.md) reviews proposed file changes with `/crunch on` and a separate `/crunch-model`.
+
+## License
+
+Copyright (c) 2026 Wasabi contributors.
+
+Licensed under the [MIT License](LICENSE).
