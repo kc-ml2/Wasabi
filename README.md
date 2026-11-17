@@ -88,6 +88,6 @@ questions stay private, and the final prompt is reviewed before sending.
 
 ## License
 
-Copyright (c) 2026 Wasabi contributors.
+Copyright (c) 2026 KC-ML2.
 
 Licensed under the [MIT License](LICENSE).
